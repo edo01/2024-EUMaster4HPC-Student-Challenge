@@ -3,6 +3,7 @@
 #include <cmath>
 #include <chrono>
 #include <iostream>
+#include <omp.h>
 
 #include "ConjugateGradient.hpp"
 
@@ -23,6 +24,13 @@ bool read_matrix_from_file(const char * filename, double ** matrix_out, size_t *
     fread(&num_rows, sizeof(size_t), 1, file);
     fread(&num_cols, sizeof(size_t), 1, file);
     matrix = new double[num_rows * num_cols];
+    
+    //first touch 
+    #pragma omp parallel for
+    for(int i=0; i<num_rows * num_cols; i++){
+        matrix[i] = 0;
+    }
+
     fread(matrix, sizeof(double), num_rows * num_cols, file);
 
     *matrix_out = matrix;
