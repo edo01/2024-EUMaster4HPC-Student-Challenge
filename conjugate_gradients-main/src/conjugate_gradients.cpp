@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <chrono>
+#include <iostream>
 
 #include "ConjugateGradient.hpp"
 
@@ -73,9 +75,33 @@ void print_matrix(const double * matrix, size_t num_rows, size_t num_cols, FILE 
 void conjugate_gradients(const double * A, const double * b, double * x, size_t size, int max_iters, double rel_error)
 {
     using namespace melblas;
+    using namespace std::chrono;
 
-    ConjugateGradient<double> CG(std::make_unique<MelBLAS_OMP<double>>());
-    CG.solve(A, b, x, size, max_iters, rel_error);
+    ConjugateGradient<double> CG_P(std::make_unique<MelBLAS_OMP<double>>());
+
+    auto start = high_resolution_clock::now();
+    CG_P.solve(A, b, x, size, max_iters, rel_error);
+    auto end =  high_resolution_clock::now();
+
+    auto duration = duration_cast<milliseconds>(end - start);
+ 
+    std::cout << "Time elapsed using MelBLAS:" << duration.count()/1000.0 << " s"<< std::endl;
+
+    // sequential execution
+/*
+    ConjugateGradient<double> CG_baseline(std::make_unique<MelBLAS_baseline<double>>());
+
+    start = high_resolution_clock::now();
+    CG_baseline.solve(A, b, x, size, max_iters, rel_error);
+    end =  high_resolution_clock::now();
+
+    auto duration_baseline = duration_cast<milliseconds>(end - start);
+ 
+    std::cout << "Time elapsed using baseline implementation:" << duration_baseline.count()/1000.0 << " s"<< std::endl;
+
+    std::cout << "Total speedup:" << duration_baseline.count()/duration.count() << std::endl; 
+*/
+
 }
 
 
