@@ -3,9 +3,13 @@
 #include <cmath>
 #include <mpi.h>
 #include <omp.h>
+#include <iostream>
 
-#define first_touch_matrix
-#define first_touch_rhs
+#define PRINT_RANK0(...) if(rank==1) printf(__VA_ARGS__)
+#define PRINT_ERR_RANK0(...) if(rank==0) fprintf(stderr, __VA_ARGS__)
+
+//#define first_touch_matrix
+//#define first_touch_rhs
 
 bool read_rhs_from_file(const char *filename, double **rhs_out, size_t *num_rows_out)
 {
@@ -20,23 +24,23 @@ bool read_rhs_from_file(const char *filename, double **rhs_out, size_t *num_rows
     FILE *file = fopen(filename, "rb");
     if (file == nullptr)
     {
-        fprintf(stderr, "Cannot open output file\n");
+        PRINT_ERR_RANK0("Cannot open output file\n");
         return false;
     }
 
     fread(&num_rows, sizeof(size_t), 1, file);
     fread(&num_cols, sizeof(size_t), 1, file);
     
-    if (rank==0 && num_cols != 1)
+    if (num_cols != 1)
     {
-        fprintf(stderr, "Right hand side has to have just a single column\n");
+        PRINT_ERR_RANK0("Right hand side has to have just a single column\n");
         return false;
     }
 
-    rhs = new double[num_rows * num_cols];
+    rhs = new double[num_rows];
     
     //first touch
-#define first_touch_rhs
+#ifdef first_touch_rhs
     #pragma omp parallel for
     for (int i = 0; i < num_rows; i++)
     {
@@ -44,7 +48,7 @@ bool read_rhs_from_file(const char *filename, double **rhs_out, size_t *num_rows
     }
 #endif // first_touch_rhs
 
-    fread(rhs, sizeof(double), num_rows * num_cols, file);
+    fread(rhs, sizeof(double), num_rows, file);
 
     *rhs_out = rhs;
     *num_rows_out = num_rows;
@@ -54,7 +58,8 @@ bool read_rhs_from_file(const char *filename, double **rhs_out, size_t *num_rows
     return true;
 }
 
-bool read_matrix_from_file(const char *filename, double **matrix_out, size_t *num_rows_out, size_t *num_cols_out)
+bool read_matrix_from_file(const char *filename, double **matrix_out, size_t *num_local_rows_out, 
+                           size_t *num_cols_out, int **sendcounts_out, int **displs_out)
 {
     int rank, num_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -63,51 +68,70 @@ bool read_matrix_from_file(const char *filename, double **matrix_out, size_t *nu
     double *matrix;
     size_t num_rows;
     size_t num_cols;
+    size_t num_local_rows;
+    size_t offset;
+    int* sendcounts;
+    int* displs;
     MPI_File fhandle;
-    unsigned int local_num_rows, offset;
 
-    //Open the matrix file
-    if(MPI_File_open(MPI_COMM_WORLD, file_matrix, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle) != MPI_SUCCESS) {
-        printf("[MPI process %d] Failure in opening the file.\n", myRank);
+    /*
+    ----------------------------------------------
+                Open the file
+    ----------------------------------------------
+    */
+    if(MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle) != MPI_SUCCESS) {
+        PRINT_ERR_RANK0("Failed to open file\n");
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        return false;
     }
-    printf("[MPI process %d] File opened successfully.\n", myRank);
-
+    printf("[MPI process %d] File opened successfully.\n", rank);
+    
     // Read the matrix size
     MPI_File_read(fhandle, &num_rows, 1 ,MPI_UNSIGNED_LONG , MPI_STATUS_IGNORE);
     MPI_File_read(fhandle, &num_cols, 1 ,MPI_UNSIGNED_LONG , MPI_STATUS_IGNORE);
-    std::cout << "Rank " << myRank << ": row = " << num_rows << " col = " << num_cols << std::endl;
 
     // calcolate the offset for each rank
-    local_num_rows = num_rows / nRanks;
-    offset = local_num_rows * sizeof(double) * myRank * num_cols;
+    num_local_rows = num_rows / num_procs;
+    offset = num_local_rows * sizeof(double) * rank * num_cols;
     
     //the last rank will have the remaining rows
-    if(myRank == nRanks - 1){
-        local_num_rows += num_rows % nRanks; //add the reminder
+    if(rank == num_procs - 1){
+        //add the reminder to the last rank
+        num_local_rows += num_rows % num_procs; 
     }
-    std::cout << "Rank " << myRank << ": local_num_rows = " << local_num_rows << " offset = " << offset << std::endl;
-    
+
+    //calculate the displacement and the sendcounts for the scatterv
+    sendcounts = new int[num_procs]; 
+    displs = new int[num_procs];
+
+    for(int i=0; i<num_procs; i++){
+        sendcounts[i] = (i==num_procs-1) ? num_rows/num_procs + num_rows%num_procs : num_rows/num_procs;
+        displs[i] = i * num_rows/num_procs;
+        PRINT_RANK0("sendcounts[%d] = %d, displs[%d] = %d\n", i, sendcounts[i], i, displs[i]);
+    }
+
     // seek the file to the correct position for each rank
     MPI_File_seek(fhandle, offset, MPI_SEEK_CUR);
 
     // Allocate memory for the local matrix
-    matrix = new double[local_num_rows * num_cols];
+    matrix = new double[num_local_rows * num_cols];
 
-#define first_touch_matrix
+#ifdef first_touch_matrix
     //first touch 
     #pragma omp parallel for
-    for(int i=0; i< local_num_rows * num_cols; i++){
+    for(int i=0; i< num_local_rows * num_cols; i++){
         matrix[i] = 0;
     }
 #endif // first_touch_matrix
 
     // Read the local matrix after first-touch
-    MPI_File_read(fhandle, matrix, local_num_rows * num_cols, MPI_DOUBLE, MPI_STATUS_IGNORE);
+    MPI_File_read(fhandle, matrix, num_local_rows * num_cols, MPI_DOUBLE, MPI_STATUS_IGNORE);
 
     *matrix_out = matrix;
-    *num_rows_out = local_num_rows;
+    *num_local_rows_out = num_local_rows;
     *num_cols_out = num_cols;
+    *sendcounts_out = sendcounts;
+    *displs_out = displs;
 
     MPI_File_close(&fhandle);
     
@@ -146,7 +170,7 @@ void print_matrix(const double *matrix, size_t num_rows, size_t num_cols, FILE *
     }
 }
 
-double dot(const double *x, const double *y, size_t size, size_t offset)
+double dot(const double *x, const double *y, size_t local_row, size_t offset)
 {
 
     int rank, num_procs;
@@ -155,87 +179,111 @@ double dot(const double *x, const double *y, size_t size, size_t offset)
 
     double result = 0.0;
     double local_res = 0.0;
-    
-    #pragma omp parallel for reduction(+ : local_res)
-    for (size_t i = offset; i < (offset+size); i++)
+
+    //#pragma omp parallel for reduction(+ : local_res)
+    for (size_t i = 0; i < local_row; i++)
     {
-        local_res += x[i] * y[i];
+        local_res += x[offset+i] * y[offset+i];
     }
+    
     // Reduce the local results
     MPI_Allreduce(&local_res, &result, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
+    
     return result;
 }
 
 void axpby(double alpha, const double *x, double beta, double *y, size_t size)
 {
     // y = alpha * x + beta * y
-    #pragma omp parallel for
+
+    //#pragma omp parallel for
     for (size_t i = 0; i < size; i++)
     {
         y[i] = alpha * x[i] + beta * y[i];
     }
 }
 
-void gemv(double alpha, const double *A, const double *x, double beta, double *y, size_t num_rows, size_t num_cols, size_t offset)
+void gemv(double alpha, const double *A, const double *x, double beta, double *y,
+            size_t num_local_rows, size_t num_cols, size_t offset, const int *sendcounts, const int *displs)
 {
     // y = alpha * A * x + beta * y;
-    #pragma omp parallel for
-    for (size_t r = 0; r < num_rows; r++)
+
+    int rank, num_procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+    double *y_temp = new double[num_cols];
+    double y_val;
+
+    //#pragma omp parallel for
+    for (size_t r = 0; r < num_local_rows; r++)
     {
-        double y_val = 0.0;
+        //row-col multiplication
+        y_val = 0.0;
         for (size_t c = 0; c < num_cols; c++)
         {
-            y_val += alpha * A[r * num_cols + c] * x[offset+c];
+            y_val += alpha * A[r * num_cols + c] * x[c];
         }
-        y[offset+r] = beta * y[offset+r] + y_val;
+        //saving the value in the correct position
+        y_temp[offset+r] = beta * y[offset+r] + y_val;
     }
-    //gather the results
-    MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, y, num_rows, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    MPI_Allgatherv(y_temp+offset, num_local_rows, MPI_DOUBLE, y, sendcounts, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+    
+
+    
+
+    delete[] y_temp;
 }
 
-void conjugate_gradients(const double *A, const double *b, double *x, size_t rows, size_t cols, int max_iters, double rel_error)
+void conjugate_gradients(const double *A, const double *b, double *x, size_t local_row, size_t cols, 
+                         const int *sendcounts, const int *displs , int max_iters, double rel_error)
 {
     int rank, num_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
-    double alpha, beta, bb, rr, rr_new;
-    double *r = new double[rows];
-    double *p = new double[rows];
-    double *Ap = new double[rows];
     int num_iters;
+    double alpha, beta, bb, rr, rr_new;
+    double *r = new double[cols];
+    double *p = new double[cols];
+    double *Ap = new double[cols];
+
+    //first touch?
 
     // calculate the offset for dot_product and gemv
-    size_t offset = rank * cols;
-    if(rank==num_procs-1){
-        offset = rows-cols;
-    }
+    size_t offset = local_row * rank; //THIS IS WRONG
 
-    for (size_t i = 0; i < rows; i++)
+    //print the offset
+    printf("rank %d -> offset = %zu\n", rank, offset);
+
+    //first touch
+    for (size_t i = 0; i < cols; i++)
     {
         x[i] = 0.0;
         r[i] = b[i];
         p[i] = b[i];
     }
 
-    bb = dot(b, b, rows);
+    bb = dot(b, b, local_row, offset);
+    //print bb
+    printf("bb = %e\n", bb);
+    
     rr = bb;
     for (num_iters = 1; num_iters <= max_iters; num_iters++)
     {
-        gemv(1.0, A, p, 0.0, Ap, rows, cols, offset);
-        alpha = rr / dot(p, Ap, cols, offset); 
-        axpby(alpha, p, 1.0, x, rows, rank);
-        axpby(-alpha, Ap, 1.0, r, rows);
-        rr_new = dot(r, r, cols, offset);
+        gemv(1.0, A, p, 0.0, Ap, local_row, cols, offset, sendcounts, displs);
+        alpha = rr / dot(p, Ap, local_row, offset); 
+        axpby(alpha, p, 1.0, x, cols);
+        axpby(-alpha, Ap, 1.0, r, cols);
+        rr_new = dot(r, r, local_row, offset);
         beta = rr_new / rr;
         rr = rr_new;
 
-        // Print intermediate information
-        if (rank == 0)
-        {
-            printf("Iteration %d: Residual norm = %e\n", num_iters, std::sqrt(rr / bb));
-        }
+        //print the relative error at each iteration
+        if(rank==0){
+            //printf("Iteration %d, relative error is %e\n", num_iters, std::sqrt(rr / bb));
+        } 
 
         if (std::sqrt(rr / bb) < rel_error)
         {
@@ -245,7 +293,7 @@ void conjugate_gradients(const double *A, const double *b, double *x, size_t row
             }
             break;
         }
-        axpby(1.0, r, beta, p, rows);
+        axpby(1.0, r, beta, p, cols);
     }
 
     delete[] r;
@@ -264,17 +312,22 @@ void conjugate_gradients(const double *A, const double *b, double *x, size_t row
 int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
+
     int rank, num_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
-    printf("MPI+OMP Implementation, #Processes %d\n", num_procs);
+    /*
+    ----------------------------------------------
+                Initialize MPI environment
+    ----------------------------------------------
+    */
 
-    if(rank==0){
-        printf("Usage: ./random_matrix input_file_matrix.bin input_file_rhs.bin output_file_sol.bin max_iters rel_error\n");
-        printf("All parameters are optional and have default values\n");
-        printf("\n");
-    }
+    PRINT_RANK0("MPI+OMP Implementation, #Processes %d\n", num_procs);
+    PRINT_RANK0("Usage: ./random_matrix input_file_matrix.bin input_file_rhs.bin output_file_sol.bin max_iters rel_error\n");
+    PRINT_RANK0("All parameters are optional and have default values\n");
+    PRINT_RANK0("\n");
+    
 
     const char *input_file_matrix = "io/matrix.bin";
     const char *input_file_rhs = "io/rhs.bin";
@@ -293,69 +346,75 @@ int main(int argc, char **argv)
     if (argc > 5)
         rel_error = atof(argv[5]);
 
-    if (rank == 0)
-    {
-        printf("Command line arguments:\n");
-        printf("  input_file_matrix: %s\n", input_file_matrix);
-        printf("  input_file_rhs:    %s\n", input_file_rhs);
-        printf("  output_file_sol:   %s\n", output_file_sol);
-        printf("  max_iters:         %d\n", max_iters);
-        printf("  rel_error:         %e\n", rel_error);
-        printf("\n");
-    }
+    PRINT_RANK0("Command line arguments:\n");
+    PRINT_RANK0("  input_file_matrix: %s\n", input_file_matrix);
+    PRINT_RANK0("  input_file_rhs:    %s\n", input_file_rhs);
+    PRINT_RANK0("  output_file_sol:   %s\n", output_file_sol);
+    PRINT_RANK0("  max_iters:         %d\n", max_iters);
+    PRINT_RANK0("  rel_error:         %e\n", rel_error);
+    PRINT_RANK0("\n");
+    PRINT_RANK0("Reading local_matrix from file ...\n");
+    
 
+    /*
+    ----------------------------------------------
+    Read the local matrix and the right hand side
+    ----------------------------------------------
+    */
     double *local_matrix;
     double *rhs;
-    size_t rows, cols;
+    size_t local_rows, cols, rhs_rows;
+    int *sendcounts, *displs;
 
-    if (rank == 0)
+    bool success_read_local_matrix = 
+        read_matrix_from_file(input_file_matrix, &local_matrix, &local_rows, &cols, &sendcounts, &displs);
+    
+    if (!success_read_local_matrix)
     {
-
-        printf("Reading local_matrix from file ...\n");
-        bool success_read_local_matrix = read_matrix_from_file(input_file_matrix, &local_matrix, &rows, &cols);
-        if (!success_read_local_matrix)
-        {
-            fprintf(stderr, "Failed to read local matrix\n");
-            return 1;
-        }
-
-        printf("Process %d -> Read local matrix Done\n", rank);
-        printf("\n");
-
-        if (rank == 0)
-        {
-            printf("Reading right hand side from file ...\n");
-        }
-        size_t rhs_rows;
-        bool success_read_rhs = read_rhs_from_file(input_file_rhs, &rhs, &rhs_rows);
-        if (!success_read_rhs)
-        {
-            fprintf(stderr, "Failed to read right hand side\n");
-            return 2;
-        }
-        printf("Process %d -> Reading RHS Done\n", rank);
-        printf("\n");
-
-        if (rhs_rows != matrix_rows)
-        {
-            fprintf(stderr, "Size of right hand side does not match the matrix\n");
-            return 4;
-        }
+        PRINT_ERR_RANK0("Failed to read local matrix\n");
+        return 1;
     }
 
-    if (rank == 0)
-    {
-        printf("Solving the system ...\n");
-    }
-
-    double * sol = new double[rows];
-    conjugate_gradients(local_matrix, rhs, sol, rows, cols, max_iters, rel_error);
-    printf("Done\n");
+    printf("Process %d -> Read local matrix Done\n", rank);
     printf("\n");
 
+    PRINT_RANK0("Reading right hand side from file ...\n");
+
+    bool success_read_rhs = read_rhs_from_file(input_file_rhs, &rhs, &rhs_rows);
+    if (!success_read_rhs)
+    {
+        PRINT_ERR_RANK0("Failed to read right hand side\n");
+        return 2;
+    }
+    printf("Process %d -> Reading RHS Done\n", rank);
+    printf("\n");
+
+    if (rhs_rows != cols)
+    {
+        PRINT_ERR_RANK0( "Size of right hand side does not match the matrix\n");
+        return 4;
+    }
+
+    /*
+    ----------------------------------------------
+                Solve the system
+    ----------------------------------------------
+    */
+    PRINT_RANK0("Solving the system ...\n");
+    
+    double * sol = new double[cols];
+    conjugate_gradients(local_matrix, rhs, sol, local_rows, cols, sendcounts, displs, max_iters, rel_error);
+    PRINT_RANK0("Done\n");
+    PRINT_RANK0("\n");
+
+    /*
+    ----------------------------------------------
+                Save the solution to file
+    ----------------------------------------------
+    */
     if(rank==0){
         printf("Writing solution to file ...\n");
-        bool success_write_sol = write_matrix_to_file(output_file_sol, sol, rows, 1);
+        bool success_write_sol = write_matrix_to_file(output_file_sol, sol, cols, 1);
         if(!success_write_sol)
         {
             fprintf(stderr, "Failed to save solution\n");
@@ -364,12 +423,21 @@ int main(int argc, char **argv)
         printf("Done\n");
         printf("\n");
     }
+
+    /*
+    ----------------------------------------------
+                        Clean up
+    ----------------------------------------------
+    */
     
     delete[] local_matrix;
     delete[] rhs;
     delete[] sol;
 
-    printf("Finished successfully\n");
+    PRINT_RANK0("Finished successfully\n");
+
+    // Finalize the MPI environment
+    MPI_Finalize();
 
     return 0;
 }
