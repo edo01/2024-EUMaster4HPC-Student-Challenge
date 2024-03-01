@@ -11,18 +11,18 @@ namespace melblas
     public MelBLAS_B<FloatingType>{
 
         public:
-            FloatingType dot(const FloatingType * x, const FloatingType * y, size_t size) const;
+            FloatingType dot(const FloatingType* x, const FloatingType* y, size_t size) const;
 
-            void axpby(FloatingType alpha, const FloatingType * x, FloatingType beta, FloatingType * y, size_t size) const;
+            void axpby(FloatingType alpha, const FloatingType* x, FloatingType beta,FloatingType* y, size_t size) const;
 
-            void gemv(FloatingType alpha, const FloatingType * A, const FloatingType * x, FloatingType beta, FloatingType * y, size_t num_rows, size_t num_cols) const;
+            void gemv(FloatingType alpha, const FloatingType* A, const FloatingType* x, FloatingType beta, FloatingType* y, size_t rows, size_t cols) const;
 
             ~MelBLAS_baseline() = default;
     };
 
 
     template<typename FloatingType>
-    FloatingType MelBLAS_baseline<FloatingType>::dot(const FloatingType * x, const FloatingType * y, size_t size) const
+    FloatingType MelBLAS_baseline<FloatingType>::dot(const FloatingType* x, const FloatingType* y, size_t size) const
     {
         FloatingType result = 0.0;
 
@@ -34,7 +34,8 @@ namespace melblas
     }
 
     template<typename FloatingType>
-    void MelBLAS_baseline<FloatingType>::axpby(FloatingType alpha, const FloatingType * x, FloatingType beta, FloatingType * y, size_t size) const
+    void MelBLAS_baseline<FloatingType>::axpby(FloatingType alpha, const FloatingType* x,
+                                                    FloatingType beta, FloatingType* y, size_t size) const
     {
         // y = alpha * x + beta * y
 
@@ -45,16 +46,17 @@ namespace melblas
     }
 
     template<typename FloatingType>
-    void MelBLAS_baseline<FloatingType>::gemv(FloatingType alpha, const FloatingType * A, const FloatingType * x, FloatingType beta, FloatingType * y, size_t num_rows, size_t num_cols) const
+    void MelBLAS_baseline<FloatingType>::gemv(FloatingType alpha, const FloatingType* A, const FloatingType* x,
+                                    FloatingType beta, FloatingType* y, size_t rows, size_t cols) const
     {
 
         // y = alpha * A * x + beta * y;
-        for(size_t r = 0; r < num_rows; r++)
+        for(size_t r = 0; r < rows; r++)
         {
             FloatingType y_val = 0.0;
-            for(size_t c = 0; c < num_cols; c++)
+            for(size_t c = 0; c < cols; c++)
             {
-                y_val += alpha * A[r * num_cols + c] * x[c];
+                y_val += alpha * A[r * cols + c] * x[c];
             }
             y[r] = beta * y[r] + y_val;
         }

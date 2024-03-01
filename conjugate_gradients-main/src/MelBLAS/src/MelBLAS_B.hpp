@@ -10,11 +10,13 @@ namespace melblas
 
         public:
         
-            virtual FloatingType dot(const FloatingType * x, const FloatingType * y, size_t size) const = 0;
+            virtual FloatingType dot(const FloatingType* x, const FloatingType* y, size_t size) const = 0;
 
-            virtual void axpby(FloatingType alpha, const FloatingType * x, FloatingType beta, FloatingType * y, size_t size) const = 0;
+            virtual void axpby(FloatingType alpha, const FloatingType* x, FloatingType beta, 
+                                    FloatingType* y, size_t size) const = 0;
 
-            virtual void gemv(FloatingType alpha, const FloatingType * A, const FloatingType * x, FloatingType beta, FloatingType * y, size_t num_rows, size_t num_cols) const = 0;
+            virtual void gemv(FloatingType alpha, const FloatingType* A, const FloatingType* x,
+                                    FloatingType beta, FloatingType* y, size_t rows, size_t cols) const = 0;
 
             virtual ~MelBLAS_B() = default;
     };
