@@ -1,59 +1,54 @@
-# Please follow the steps for running the code on MeluXina
+# Conjugate Gradient Solver for Meluxina
 
-# Conjugate gradient method
+## Compile the code
+To compile the code on Meluxina you need to load the following modules:
 
-
-
-## Intruduction
-
-Hello, I am John Doe, and I am a student on the University of Science. This is my final project in the programming class.
-
-It is a program which solves a system of equations using the conjugate gradient method. It is an iterative solver, which needs only matrix-vector multiplications and some vector operations to find a solution. To find more information about the algorithm, read your notes from past Linear algebra classes, or see e.g. [this Wikipedia page](https://en.wikipedia.org/wiki/Conjugate_gradient_method).
-
-
-
-## Description of the project
-
-The main program in this project is `conjugate_gradients`, which solves the system. It loads and input dense matrix in row-major format and a right-hand-side from given binary files, performs the conjugate gradient iterations until convergence, and then writes the found solution to a given output binary file. A symmetric positive definite matrix and a right-hand-side can be generated using the `random_spd_system.sh` script and program.
-
-Inorder to test your code on MeluXina, please use the interactive node (for quick checking)
-```
-salloc -A p200301 --res cpudev -q dev -N 1 -t 00:30:00
-```
-
-
-To make the program work, I need to execute this command first
-```
+```bash
 module load intel
+module load CMake
 ```
 
-Create a directory for the input and output files
-```
-mkdir io
-```
+Then, you can compile the code using the following commands:
 
-To compile the program, I use
-```
-icpx -O2 src/conjugate_gradients.cpp -o conjugate_gradients
-```
-
-To generate a random SPD system of 10000 equations and unknowns, use e.g.
-```
-./random_spd_system.sh 10000 io/matrix.bin io/rhs.bin
+```bash
+mkdir build
+cd build
+cmake ..
+make
 ```
 
-To then solve the system, use
+To compile just one of the tests, you can replace the `make` command with the name of the test you want to compile. For example, to compile the `test_CG_CPU_MPI_OMP` test, you can use the following command:
+
+```bash
+make test_CG_CPU_MPI_OMP.out
 ```
-./conjugate_gradients io/matrix.bin io/rhs.bin io/sol.bin
+
+## Running the tests
+The test_CG_CPU_MPI_OMP test can be run in two different modes: **File mode** and **Generate mode**.
+
+1. **File Mode**: In this mode, you need to specify the input matrix file, the input right-hand side file, the output solution file, the maximum iterations, and the relative error.
+
+Here is an example of how to execute the program in this mode:
+
+```bash
+srun ./test_CG_CPU_MPI_OMP_file.out -A <matrix_file> -b <rhs_file> -o <output_file> -i <max_iterations> -e <relative_error>
 ```
-It takes almost a minute to run this program.
+
+If any of the parameters are not provided, the program will use the following default values:
+- **matrix_file**: The input matrix file. The default value is **"io/matrix.bin"**.
+- **rhs_file**: The input right-hand side file. The default value is **"io/rhs.bin"**.
+- **output_file**: The output solution file. The default value is **"io/sol.bin"**.
+- **max_iterations**: The maximum number of iterations. The default value is **1000**.
+- **relative_error**: The relative error. The default value is **1e-8**.
 
 
+2. **Generate Mode**:  In this mode, you only need to provide the size of the matrix. The program will **generate** a matrix and a right-hand side of the specified size, solve the system, and write the solution to a file.
 
-## Task
+Here is an example of how to execute the program in this mode:
 
-Unfortunately, my programming teacher was not happy with this project. He said that the conjugate gradient solver is very slow. But I have no idea how to make it faster.
+```bash
+srun ./test_CG_CPU_MPI_OMP_gen.out -s <matrix_size> -o <output_file> -i <max_iterations> -e <relative_error>
+```
+use the following commands:
 
-__Will you help me make the program as fast as possible?__
 
-You can modify my code as much as you like. But the main functionality of the program has to stay the same - solve a system of equations using the conjugate gradient method.
