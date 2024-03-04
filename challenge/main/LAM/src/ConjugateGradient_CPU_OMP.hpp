@@ -209,7 +209,7 @@ bool ConjugateGradient_CPU_OMP<FloatingType>::save_result_to_file(const char * f
     fwrite(&_num_rows, sizeof(size_t), 1, file);
     fwrite(&num_cols, sizeof(size_t), 1, file);
     //save rhs to file 
-    fwrite(_rhs, sizeof(FloatingType), _num_rows, file);
+    fwrite(_x, sizeof(FloatingType), _num_rows, file);
 
     fclose(file);
 
