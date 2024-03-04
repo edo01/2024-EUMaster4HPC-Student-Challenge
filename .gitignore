@@ -31,5 +31,9 @@
 *.out
 *.app
 
-#io
-io/*
+# exclude io directory
+io/
+
+# exclude build directory
+build/
+
