@@ -20,8 +20,16 @@ namespace LAM
     class ConjugateGradient_MultiGPUS_CUDA_NCCL:
             public ConjugateGradient<FloatingType>
     {
-        private:
+        public:
+            ConjugateGradient_MultiGPUS_CUDA_NCCL(const char * _filename_matrix, onst char * _filename_rhs)
+                        : ConjugateGradient<FloatingType>()
+            {
+                filename_matrix = _filename_matrix;
+                filename_rhs = _filename_rhs;
+            }
 
+
+        private:
             const char * filename_matrix;
             const char * filename_rhs;
 
@@ -94,6 +102,9 @@ namespace LAM
             cudaMalloc(&r_dev, sizeof(FloatingType) * size);
             cudaMalloc(&pAp_dev, sizeof(FloatingType));
             cudaMalloc(&Ap0_dev, sizeof(FloatingType) * size); // Ap0_dev is located in device 0 and will collect all the result from the devices
+
+            //  Only rank 0 reads the right-hand side vector from the matrix
+            load_rhs_from_file(filename_rhs); //TODO check if this is right, how to generalize this
 
             // Initialize variables in device 0
             cudaMemcpyAsync(b_dev, b, sizeof(FloatingType) * size, cudaMemcpyHostToDevice, streams[0]);

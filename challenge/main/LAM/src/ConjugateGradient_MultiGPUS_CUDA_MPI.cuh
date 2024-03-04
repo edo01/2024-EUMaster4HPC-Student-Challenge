@@ -20,23 +20,32 @@ namespace LAM
     class ConjugateGradient_MultiGPUS_CUDA_NCCL:
             public ConjugateGradient<FloatingType>
     {
-    private:
 
-        const char * filename_matrix;
-        const char * filename_rhs;
+        public:
+             ConjugateGradient_MultiGPUS_CUDA_MPI(const char * _filename_matrix, onst char * _filename_rhs)
+                : ConjugateGradient<FloatingType>()
+        {
+            filename_matrix = _filename_matrix;
+            filename_rhs = _filename_rhs;
+        }
 
-        FloatingType * x;
-        FloatingType * b;
+        private:
 
-        size_t size;
-        int numDevices = 1;
+            const char * filename_matrix;
+            const char * filename_rhs;
+
+            FloatingType * x;
+            FloatingType * b;
+
+            size_t size;
+            int numDevices = 1;
 
 
-        static constexpr MPI_Datatype mpi_datatype = std::is_same<FloatingType, double>::value ? MPI_DOUBLE : MPI_FLOAT;
-        static constexpr NCCL_Datatype nccl_datatype = std::is_same<FloatingType, double>::value ? ncclDouble : ncclFloat;
+            static constexpr MPI_Datatype mpi_datatype = std::is_same<FloatingType, double>::value ? MPI_DOUBLE : MPI_FLOAT;
+            static constexpr NCCL_Datatype nccl_datatype = std::is_same<FloatingType, double>::value ? ncclDouble : ncclFloat;
 
-        void read_and_divide_matrix_from_file(const char * filename, FloatingType ** A_dev, size_t * h_sizes, size_t * num_rows,
-                                              cudaStream_t * streams, size_t numDevices, int myRank = 0, int nRanks = 0);
+            void read_and_divide_matrix_from_file(const char * filename, FloatingType ** A_dev, size_t * h_sizes, size_t * num_rows,
+                                                  cudaStream_t * streams, size_t numDevices, int myRank = 0, int nRanks = 0);
     };
 
     template<typename FloatingType>
@@ -94,6 +103,9 @@ namespace LAM
             cudaMalloc(&r_dev, sizeof(FloatingType) * size);
             cudaMalloc(&pAp_dev, sizeof(FloatingType));
             cudaMalloc(&Ap0_dev, sizeof(FloatingType) * size); // Ap0_dev is located in device 0 and will collect all the result from the devices
+
+            //  Only rank 0 reads the right-hand side vector from the matrix
+            load_rhs_from_file(filename_rhs); //TODO check if this is right, how to generalize this
 
             // Initialize variables in device 0
             cudaMemcpyAsync(b_dev, b, sizeof(FloatingType) * size, cudaMemcpyHostToDevice, streams[0]);
