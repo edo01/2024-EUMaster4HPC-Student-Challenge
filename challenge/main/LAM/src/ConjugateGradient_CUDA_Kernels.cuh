@@ -109,8 +109,9 @@ axpby(const FloatingType * alpha, const FloatingType * x, const FloatingType * b
     // y = alpha * x + beta * y
     // Retrieve global thread id
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    unsigned int stride = blockDim.x * gridDim.x;
     // Check boundary
-    if(tid < size){
+    for(unsigned int i = tid; i < size; i += stride){
         y[tid] *= *beta;
         y[tid] += *alpha * x[tid];
     }
@@ -124,8 +125,9 @@ axpy(const FloatingType * alpha, const FloatingType * x, FloatingType * y, size_
     // y = alpha * x +  y
     // Retrieve global thread id
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    unsigned int stride = blockDim.x * gridDim.x;
     // Check boundary
-    if(tid < size){
+    for(unsigned int i = tid; i < size; i += stride){
         y[tid] += *alpha * x[tid];
     }
 }
@@ -137,8 +139,9 @@ minusaxpy(const FloatingType * alpha, const FloatingType * x, FloatingType * y, 
     // y = alpha * x +  y
     // Retrieve global thread id
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    unsigned int stride = blockDim.x * gridDim.x;
     // Check boundary
-    if(tid < size){
+    for(unsigned int i = tid; i < size; i += stride) {
         y[tid] -= *alpha * x[tid];
     }
 }
@@ -150,8 +153,9 @@ xpby( const FloatingType * x, const FloatingType *beta, FloatingType * y, size_t
     // y = alpha * x + beta * y
     // Retrieve global thread id
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    unsigned int stride = blockDim.x * gridDim.x;
     // Check boundary
-    if(tid < size){
+    for(unsigned int i = tid; i < size; i += stride){
         y[tid] *= *beta;
         y[tid] += x[tid];
     }
