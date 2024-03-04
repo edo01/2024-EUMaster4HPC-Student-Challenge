@@ -63,34 +63,16 @@ CMAKE_BINARY_DIR = /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/chall
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: LAM/all
 all: test/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
-preinstall: LAM/preinstall
 preinstall: test/preinstall
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: LAM/clean
 clean: test/clean
 .PHONY : clean
-
-#=============================================================================
-# Directory level rules for directory LAM
-
-# Recursive "all" directory target.
-LAM/all: LAM/CMakeFiles/LAM.dir/all
-.PHONY : LAM/all
-
-# Recursive "preinstall" directory target.
-LAM/preinstall:
-.PHONY : LAM/preinstall
-
-# Recursive "clean" directory target.
-LAM/clean: LAM/CMakeFiles/LAM.dir/clean
-.PHONY : LAM/clean
 
 #=============================================================================
 # Directory level rules for directory test
@@ -110,44 +92,18 @@ test/clean: test/CMakeFiles/test_CPU_MPI_OMP.out.dir/clean
 .PHONY : test/clean
 
 #=============================================================================
-# Target rules for target LAM/CMakeFiles/LAM.dir
-
-# All Build rule for target.
-LAM/CMakeFiles/LAM.dir/all:
-	$(MAKE) $(MAKESILENT) -f LAM/CMakeFiles/LAM.dir/build.make LAM/CMakeFiles/LAM.dir/depend
-	$(MAKE) $(MAKESILENT) -f LAM/CMakeFiles/LAM.dir/build.make LAM/CMakeFiles/LAM.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles --progress-num=1,2 "Built target LAM"
-.PHONY : LAM/CMakeFiles/LAM.dir/all
-
-# Build rule for subdir invocation for target.
-LAM/CMakeFiles/LAM.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 2
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LAM/CMakeFiles/LAM.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 0
-.PHONY : LAM/CMakeFiles/LAM.dir/rule
-
-# Convenience name for target.
-LAM: LAM/CMakeFiles/LAM.dir/rule
-.PHONY : LAM
-
-# clean rule for target.
-LAM/CMakeFiles/LAM.dir/clean:
-	$(MAKE) $(MAKESILENT) -f LAM/CMakeFiles/LAM.dir/build.make LAM/CMakeFiles/LAM.dir/clean
-.PHONY : LAM/CMakeFiles/LAM.dir/clean
-
-#=============================================================================
 # Target rules for target test/CMakeFiles/test_CPU_OMP.out.dir
 
 # All Build rule for target.
-test/CMakeFiles/test_CPU_OMP.out.dir/all: LAM/CMakeFiles/LAM.dir/all
+test/CMakeFiles/test_CPU_OMP.out.dir/all:
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test_CPU_OMP.out.dir/build.make test/CMakeFiles/test_CPU_OMP.out.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test_CPU_OMP.out.dir/build.make test/CMakeFiles/test_CPU_OMP.out.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles --progress-num=5,6 "Built target test_CPU_OMP.out"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles --progress-num=3,4 "Built target test_CPU_OMP.out"
 .PHONY : test/CMakeFiles/test_CPU_OMP.out.dir/all
 
 # Build rule for subdir invocation for target.
 test/CMakeFiles/test_CPU_OMP.out.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 2
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test_CPU_OMP.out.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 0
 .PHONY : test/CMakeFiles/test_CPU_OMP.out.dir/rule
@@ -165,15 +121,15 @@ test/CMakeFiles/test_CPU_OMP.out.dir/clean:
 # Target rules for target test/CMakeFiles/test_CPU_MPI_OMP.out.dir
 
 # All Build rule for target.
-test/CMakeFiles/test_CPU_MPI_OMP.out.dir/all: LAM/CMakeFiles/LAM.dir/all
+test/CMakeFiles/test_CPU_MPI_OMP.out.dir/all:
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test_CPU_MPI_OMP.out.dir/build.make test/CMakeFiles/test_CPU_MPI_OMP.out.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/test_CPU_MPI_OMP.out.dir/build.make test/CMakeFiles/test_CPU_MPI_OMP.out.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles --progress-num=3,4 "Built target test_CPU_MPI_OMP.out"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles --progress-num=1,2 "Built target test_CPU_MPI_OMP.out"
 .PHONY : test/CMakeFiles/test_CPU_MPI_OMP.out.dir/all
 
 # Build rule for subdir invocation for target.
 test/CMakeFiles/test_CPU_MPI_OMP.out.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 2
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/test_CPU_MPI_OMP.out.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles 0
 .PHONY : test/CMakeFiles/test_CPU_MPI_OMP.out.dir/rule

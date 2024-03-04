@@ -12,6 +12,8 @@ project(TEST_CG VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+message(STATUS "C++ compiler: ${CMAKE_CXX_COMPILER}")
+
 # Define default build type if not provided
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
@@ -49,11 +51,12 @@ if(CUDA_FOUND)
     add_definitions(-DUSE_CUDA)
 
     # Set policy to use CUDA_ARCHITECTURES
-    cmake_policy(SET CMP0104 NEW)
+    #cmake_policy(SET CMP0104 NEW)
 
     # Set CUDA_ARCHITECTURES to compute capability 6.1
-    set(CMAKE_CUDA_ARCHITECTURES 61 62 70 72 75 80 86)
+    #set(CMAKE_CUDA_ARCHITECTURES 61 62 70 72 75 80 86)
+    set(CMAKE_CUDA_ARCHITECTURES 80)
 endif()
 
-add_subdirectory(LAM)
+#add_subdirectory(LAM)
 add_subdirectory(test)

@@ -117,19 +117,6 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named LAM
-
-# Build rule for target.
-LAM: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LAM
-.PHONY : LAM
-
-# fast build rule for target.
-LAM/fast:
-	$(MAKE) $(MAKESILENT) -f LAM/CMakeFiles/LAM.dir/build.make LAM/CMakeFiles/LAM.dir/build
-.PHONY : LAM/fast
-
-#=============================================================================
 # Target rules for targets named test_CPU_OMP.out
 
 # Build rule for target.
@@ -163,7 +150,6 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... LAM"
 	@echo "... test_CPU_MPI_OMP.out"
 	@echo "... test_CPU_OMP.out"
 .PHONY : help

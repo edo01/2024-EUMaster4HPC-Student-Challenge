@@ -1,8 +1,5 @@
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles/edit_cache.dir
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/CMakeFiles/rebuild_cache.dir
-/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/LAM/CMakeFiles/LAM.dir
-/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/LAM/CMakeFiles/edit_cache.dir
-/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/LAM/CMakeFiles/rebuild_cache.dir
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/test/CMakeFiles/test_CPU_OMP.out.dir
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/test/CMakeFiles/test_CPU_MPI_OMP.out.dir
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/test/CMakeFiles/edit_cache.dir

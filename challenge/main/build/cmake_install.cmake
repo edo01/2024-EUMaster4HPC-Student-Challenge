@@ -44,7 +44,6 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/LAM/cmake_install.cmake")
   include("/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/build/test/cmake_install.cmake")
 
 endif()

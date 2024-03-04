@@ -212,6 +212,12 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
   /mnt/tier2/apps/USE/easybuild/release/2023.1/software/impi/2021.9.0-intel-compilers-2023.1.0/mpi/2021.9.0/include/mpio.h \
   /mnt/tier2/apps/USE/easybuild/release/2023.1/software/impi/2021.9.0-intel-compilers-2023.1.0/mpi/2021.9.0/include/mpi.h \
   /mnt/tier2/apps/USE/easybuild/release/2023.1/software/impi/2021.9.0-intel-compilers-2023.1.0/mpi/2021.9.0/include/mpicxx.h \
+  /usr/include/unistd.h \
+  /usr/include/bits/posix_opt.h \
+  /usr/include/bits/environments.h \
+  /usr/include/bits/confname.h \
+  /usr/include/bits/getopt_posix.h \
+  /usr/include/bits/getopt_core.h \
   /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/include/LAM.hpp \
   /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient.hpp \
   /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/memory \
@@ -236,7 +242,9 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
   /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/pstl/execution_defs.h \
   /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_OMP.hpp \
   /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient.hpp \
-  /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_MPI_OMP.hpp
+  /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_MPI_OMP.hpp \
+  /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_OACC.hpp \
+  /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/lib/gcc/x86_64-pc-linux-gnu/12.3.0/include/openacc.h
 
 
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_MPI_OMP.hpp:
@@ -264,6 +272,10 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/memory:
 
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient.hpp:
+
+/usr/include/bits/getopt_core.h:
+
+/usr/include/bits/environments.h:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/pstl/execution_defs.h:
 
@@ -345,6 +357,8 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 
 /home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/include/LAM.hpp:
 
+/usr/include/bits/posix_opt.h:
+
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/clocale:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/x86_64-pc-linux-gnu/bits/c++locale.h:
@@ -362,6 +376,8 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/exception:
 
 /usr/include/bits/types/wint_t.h:
+
+/home/users/u101379/2024-EUMaster4HPC-Student-Challenge/challenge/main/LAM/src/ConjugateGradient_CPU_OACC.hpp:
 
 /usr/include/wchar.h:
 
@@ -454,6 +470,8 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/tr1/poly_laguerre.tcc:
 
 /usr/include/bits/types/struct_timeval.h:
+
+/usr/include/unistd.h:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/cstdlib:
 
@@ -625,7 +643,11 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/debug/assertions.h:
 
+/usr/include/bits/confname.h:
+
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/bits/stl_iterator.h:
+
+/mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/lib/gcc/x86_64-pc-linux-gnu/12.3.0/include/openacc.h:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/debug/debug.h:
 
@@ -638,6 +660,8 @@ test/CMakeFiles/test_CPU_MPI_OMP.out.dir/test_CG_CPU_MPI_OMP.cpp.o: /home/users/
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/cmath:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/tr1/riemann_zeta.tcc:
+
+/usr/include/bits/getopt_posix.h:
 
 /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/include/c++/12.3.0/iosfwd:
 

@@ -25,6 +25,9 @@ public ConjugateGradient<FloatingType>{
         bool virtual load_matrix_from_file(const char* filename);
         bool virtual load_rhs_from_file(const char* filename);
         bool virtual save_result_to_file(const char * filename) const;
+
+        bool virtual generate_matrix(const size_t rows, const size_t cols);
+        bool virtual generate_rhs();
         
         size_t get_num_rows() const { return _num_local_rows; }
         size_t get_num_cols() const { return _num_cols; }
@@ -44,8 +47,14 @@ public ConjugateGradient<FloatingType>{
         int* _sendcounts;
         int* _displs;
         size_t _offset;
-        static constexpr MPI_Datatype mpi_datatype = std::is_same<FloatingType, double>::value ? MPI_DOUBLE : MPI_FLOAT;
-       
+        static MPI_Datatype get_mpi_datatype() {
+            if (std::is_same<FloatingType, double>::value) {
+                return MPI_DOUBLE;
+            } else {
+                return MPI_FLOAT;
+            }
+        }       
+        
         FloatingType dot(const FloatingType* x, const FloatingType* y);
 
         void axpby(FloatingType alpha, const FloatingType* x, FloatingType beta, 
@@ -102,6 +111,111 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::solve( int max_iters, Floating
         PRINT_RANK0("Did not converge in %d iterations, relative error is %e\n", max_iters, std::sqrt(rr / rhs_module));
         return false;
     }
+}
+
+template<typename FloatingType>
+bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::generate_rhs()
+{
+    int rank, num_procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+    size_t rhs_rows = _num_cols;
+
+    _rhs = new FloatingType[rhs_rows];
+    
+    //first-touch policy: allocate the vector exploiting NUMA to avoid false sharing
+#ifdef FIRST_TOUCH
+    #pragma omp parallel for
+#endif //FIRST_TOUCH
+    for (int i = 0; i < rhs_rows; i++)
+    {
+        _rhs[i] = 1.0;
+    }
+
+    return true;
+}
+
+template<typename FloatingType>
+bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::generate_matrix(const size_t num_total_rows, const size_t cols)
+{
+  
+    int rank, num_procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+    _num_cols = cols;
+    _num_local_rows = num_total_rows / num_procs;
+    // calcolate the offset for each rank
+    _offset = _num_local_rows * rank;    
+
+    //the last rank will have the remaining rows
+    if(rank == num_procs - 1){
+        //add the reminder to the last rank
+        _num_local_rows += num_total_rows % num_procs; 
+    }
+
+    //calculate the displacement and the sendcounts for the scatterv
+    _sendcounts = new int[num_procs]; 
+    _displs = new int[num_procs];
+    
+
+    for(int i=0; i<num_procs; i++){
+        _sendcounts[i] = num_total_rows/num_procs;
+        _sendcounts[i] += (i==num_procs-1) ? num_total_rows%num_procs : 0;
+        _displs[i] = i * (num_total_rows/num_procs);
+        //printf("rank %d) sendcounts[%d] = %d, displs[%d] = %d\n", rank, i, _sendcounts[i], i, _displs[i]);
+    }
+
+    // Allocate memory for the local matrix
+    _matrix = new FloatingType[_num_local_rows * _num_cols];
+
+    /*
+    In a NUMA system, memory pages can be local to a CPU or remote. By default Linux 
+    allocates memory in a first-touch policy, meaning the first write access to a memory 
+    page determines on which node the page is physically allocated.
+
+    If your malloc is large enough that new memory is requested from the OS (instead of 
+    reusing existing heap memory), this first touch will happen in the initialization. 
+    Because you use static scheduling for OpenMP, the same thread will use the memory 
+    that initialized it. Therefore, unless the thread gets migrated to a different CPU, 
+    which is unlikely, the memory will be local.
+
+    If you don't parallelize the initialization, the memory will end up local to the main 
+    thread which will be worse for threads that are on different sockets.
+    */
+    /*
+    The same as above also applies to caches. The initialization will put array elements 
+    into the cache of the CPU doing it. If the same CPU accesses the memory during the 
+    second phase, it will be cache-hot and ready to use.
+    */
+
+    // Read the local matrix after first-touch
+    /*MPI_File_read(fhandle, _matrix, _num_local_rows * _num_cols, get_mpi_datatype() , MPI_STATUS_IGNORE);*/
+
+    // generate a random spd dense matrix
+#ifdef FIRST_TOUCH
+    #pragma omp parallel for
+#endif  //FIRST_TOUCH
+    for (size_t i = 0; i < _num_local_rows; i++) {
+        for (size_t j = 0; j < _num_cols; j++) {
+            
+            if(i+_offset==j-1 || i+_offset==j+1) 
+                _matrix[i * _num_cols + j] = 1;
+            else if(i+_offset==j)
+                _matrix[i * _num_cols + j] = 2;
+            else
+                _matrix[i * _num_cols + j] = 0;
+        }
+    }
+    
+    //initialize x, p, Ap and r
+    _x = new FloatingType[_num_cols];
+    _p = new FloatingType[_num_cols];
+    _Ap = new FloatingType[_num_cols];
+    _r = new FloatingType[_num_cols];
+    
+    return true;
 }
 
 template<typename FloatingType>
@@ -242,7 +356,7 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::load_matrix_from_file(const ch
 
 
     // Read the local matrix after first-touch
-    MPI_File_read(fhandle, _matrix, _num_local_rows * _num_cols, mpi_datatype , MPI_STATUS_IGNORE);
+    MPI_File_read(fhandle, _matrix, _num_local_rows * _num_cols, get_mpi_datatype() , MPI_STATUS_IGNORE);
 
     MPI_File_close(&fhandle);
     
@@ -300,7 +414,7 @@ FloatingType ConjugateGradient_CPU_MPI_OMP<FloatingType>::dot(const FloatingType
     }
     
     // Reduce the local results in place
-    MPI_Allreduce(&local_res, &result, 1, mpi_datatype, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_res, &result, 1, get_mpi_datatype(), MPI_SUM, MPI_COMM_WORLD);
     
     return result;
 }
@@ -341,7 +455,7 @@ void ConjugateGradient_CPU_MPI_OMP<FloatingType>::gemv(FloatingType alpha, const
         y_temp[r] = beta * y[_offset+r] + y_val;
     }
 
-    MPI_Allgatherv(y_temp, _num_local_rows, mpi_datatype, y, _sendcounts, _displs, mpi_datatype, MPI_COMM_WORLD);
+    MPI_Allgatherv(y_temp, _num_local_rows, get_mpi_datatype(), y, _sendcounts, _displs, get_mpi_datatype(), MPI_COMM_WORLD);
 
     delete[] y_temp;
 }

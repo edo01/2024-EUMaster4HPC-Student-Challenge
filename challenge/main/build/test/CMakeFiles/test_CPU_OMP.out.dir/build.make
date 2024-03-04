@@ -92,11 +92,6 @@ test_CPU_OMP_out_EXTERNAL_OBJECTS =
 
 test/test_CPU_OMP.out: test/CMakeFiles/test_CPU_OMP.out.dir/test_CG_CPU_OMP.cpp.o
 test/test_CPU_OMP.out: test/CMakeFiles/test_CPU_OMP.out.dir/build.make
-test/test_CPU_OMP.out: LAM/libLAM.so
-test/test_CPU_OMP.out: /mnt/tier2/apps/USE/easybuild/release/2023.1/software/impi/2021.9.0-intel-compilers-2023.1.0/mpi/2021.9.0/lib/libmpicxx.so
-test/test_CPU_OMP.out: /mnt/tier2/apps/USE/easybuild/release/2023.1/software/impi/2021.9.0-intel-compilers-2023.1.0/mpi/2021.9.0/lib/release/libmpi.so
-test/test_CPU_OMP.out: /lib64/librt.so
-test/test_CPU_OMP.out: /lib64/libdl.so
 test/test_CPU_OMP.out: /mnt/tier2/apps/USE/easybuild/release/2023.1/software/GCCcore/12.3.0/lib64/libgomp.so
 test/test_CPU_OMP.out: /lib64/libpthread.so
 test/test_CPU_OMP.out: test/CMakeFiles/test_CPU_OMP.out.dir/link.txt
