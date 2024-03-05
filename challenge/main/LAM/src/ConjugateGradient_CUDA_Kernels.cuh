@@ -98,8 +98,8 @@ dot(const FloatingType, * a, const FloatingType, * b, FloatingType, * res, size_
     partialDot<gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(a, b, partialSum, size);
     int s = gridSize;
     while( s > 1 ){
-    reduce<gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(partialSum, partialSum, s);
-    s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+        reduce<gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(partialSum, partialSum, s);
+        s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
     }
     cudaMemcpyAsync(res, partialSum, sizeof(FloatingType), cudaMemcpyDeviceToDevice, stream);
     cudaFree(partialSum);
