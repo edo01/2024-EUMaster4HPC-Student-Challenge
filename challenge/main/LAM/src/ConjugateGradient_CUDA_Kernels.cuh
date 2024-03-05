@@ -96,8 +96,13 @@ dot(const FloatingType, * a, const FloatingType, * b, FloatingType, * res, size_
 {
     FloatingType * partialSum;
     cudaMalloc(&partialSum, sizeof(FloatingType) * gridSize);
-    partialDot<FloatingType, gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(a, b, partialSum, size);
-    reduce<FloatingType, 1, blockSize><<<1,blockSize, 0, stream>>>(partialSum, res, gridSize); // TODO deal with the case in which only one reduce is not enough
+    partialDot<gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(a, b, partialSum, size);
+    int s = gridSize;
+    while( s > 1 ){
+    reduce<gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(partialSum, partialSum, s);
+    s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+    }
+    cudaMemcpyAsync(res, partialSum, sizeof(FloatingType), cudaMemcpyDeviceToDevice, stream);
     cudaFree(partialSum);
 }
 
