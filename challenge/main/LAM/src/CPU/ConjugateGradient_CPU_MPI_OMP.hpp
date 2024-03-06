@@ -4,7 +4,9 @@
 #include <memory>
 #include <iostream>
 #include <mpi.h>
-#include "ConjugateGradient.hpp"
+#include <chrono>
+#include "../ConjugateGradient.hpp"
+
 
 #define PRINT_RANK0(...) if(rank==0) printf(__VA_ARGS__)
 #define PRINT_ERR_RANK0(...) if(rank==0) fprintf(stderr, __VA_ARGS__)
@@ -28,7 +30,7 @@ public ConjugateGradient<FloatingType>{
 
         bool virtual generate_matrix(const size_t rows, const size_t cols);
         bool virtual generate_rhs();
-        
+
         size_t get_num_rows() const { return _num_local_rows; }
         size_t get_num_cols() const { return _num_cols; }
     
@@ -62,6 +64,7 @@ public ConjugateGradient<FloatingType>{
 
         void gemv(FloatingType alpha, const FloatingType* A, const FloatingType* x,
                                 FloatingType beta, FloatingType* y);   
+        
 
 };
 
@@ -88,8 +91,12 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::solve( int max_iters, Floating
     rhs_module = dot(_rhs, _rhs);
 
     rr = rhs_module;
+    //calculate avarage time of iterations
+    std::chrono::duration<double> avg_time(0);
     for(num_iters = 1; num_iters <= max_iters; num_iters++)
     {
+        auto start = std::chrono::high_resolution_clock::now();
+
         gemv(1.0, _matrix, _p, 0.0, _Ap);
         alpha = rr / dot(_p, _Ap);
         axpby(alpha, _p, 1.0, _x);
@@ -99,7 +106,12 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::solve( int max_iters, Floating
         rr = rr_new;
         if(std::sqrt(rr / rhs_module) < rel_error) { break; }
         axpby(1.0, _r, beta, _p);
+
+        auto end = std::chrono::high_resolution_clock::now();
+        avg_time += end - start;
     }
+    avg_time /= num_iters;
+    PRINT_RANK0("Average time of iterations: %f s\n", avg_time.count());
 
     if(num_iters <= max_iters)
     {
@@ -126,7 +138,7 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::generate_rhs()
     
     //first-touch policy: allocate the vector exploiting NUMA to avoid false sharing
 #ifdef FIRST_TOUCH
-    #pragma omp parallel for
+    #pragma omp parallel for 
 #endif //FIRST_TOUCH
     for (int i = 0; i < rhs_rows; i++)
     {
@@ -166,6 +178,12 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::generate_matrix(const size_t n
         _displs[i] = i * (num_total_rows/num_procs);
         //printf("rank %d) sendcounts[%d] = %d, displs[%d] = %d\n", rank, i, _sendcounts[i], i, _displs[i]);
     }
+
+    long unsigned int DATA_SIZE = _num_local_rows * _num_cols * sizeof(FloatingType);
+    PRINT_RANK0("Problem size: %lu bytes (%f GB)\n", DATA_SIZE, DATA_SIZE/(1024.0*1024.0*1024.0));
+    DATA_SIZE += _num_cols*5*sizeof(FloatingType);
+    PRINT_RANK0("I am trying to allocate %lu bytes (%f GB)\n", DATA_SIZE, DATA_SIZE/(1024.0*1024.0*1024.0));
+    fflush(stdout);
 
     // Allocate memory for the local matrix
     _matrix = new FloatingType[_num_local_rows * _num_cols];
@@ -326,6 +344,11 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::load_matrix_from_file(const ch
     MPI_File_seek(fhandle, file_offset, MPI_SEEK_CUR);
 
     // Allocate memory for the local matrix
+    long unsigned int DATA_SIZE = _num_local_rows * _num_cols * sizeof(FloatingType);
+    DATA_SIZE += _num_cols*5*sizeof(FloatingType);
+    printf("I am trying to allocate %lu bytes (%f GB)\n", DATA_SIZE, DATA_SIZE/(1024*1024*1024));
+    fflush(stdout);
+
     _matrix = new FloatingType[_num_local_rows * _num_cols];
 
     /*
@@ -354,6 +377,7 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::load_matrix_from_file(const ch
     }
 #endif  //FIRST_TOUCH
 
+    
 
     // Read the local matrix after first-touch
     MPI_File_read(fhandle, _matrix, _num_local_rows * _num_cols, get_mpi_datatype() , MPI_STATUS_IGNORE);

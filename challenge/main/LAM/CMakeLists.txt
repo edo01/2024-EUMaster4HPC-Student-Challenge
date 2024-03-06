@@ -10,15 +10,18 @@ if(CUDA_FOUND)
     # Add NCCl include and library directories 
     set(NCCL_INCLUDE_DIRS "/apps/USE/easybuild/release/2023.1/software/NCCL/2.18.3-GCCcore-12.3.0-CUDA-12.2.0/include")
     set(NCCL_LIBRARIES "/apps/USE/easybuild/release/2023.1/software/NCCL/2.18.3-GCCcore-12.3.0-CUDA-12.2.0/lib/libnccl.so")
+
+    # Create LAM target
+    add_library(LAM STATIC ${SOURCES})
+
+    # Link NCCL to your target
+    target_link_libraries(LAM PUBLIC ${NCCL_LIBRARIES})
+    target_link_libraries(LAM PUBLIC cublas)
+
+    # Include NCCL directories
+    target_include_directories(LAM PUBLIC ${NCCL_INCLUDE_DIRS})
+
 endif()
-
-# Create LAM target
-add_library(LAM STATIC ${SOURCES})
-
-# Link NCCL to your target
-target_link_libraries(LAM PUBLIC ${NCCL_LIBRARIES})
-# Include NCCL directories
-target_include_directories(LAM PUBLIC ${NCCL_INCLUDE_DIRS})
 
 # Link libraries to the executable
 #target_link_libraries(LAM PUBLIC MPI::MPI_CXX OpenMP::OpenMP_CXX)
