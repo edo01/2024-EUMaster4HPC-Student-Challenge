@@ -12,7 +12,7 @@ project(TEST_CG VERSION 1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-message(STATUS "C++ compiler: ${CMAKE_CXX_COMPILER}")
+#message(STATUS "C++ compiler: ${CMAKE_CXX_COMPILER}")
 
 # Define default build type if not provided
 if(NOT CMAKE_BUILD_TYPE)
@@ -39,11 +39,12 @@ endif()
 # find MPI
 find_package(MPI REQUIRED)
 # find OpenMP
-#cmake_policy(SET CMP0074 NEW)
+cmake_policy(SET CMP0074 NEW)
 find_package(OpenMP REQUIRED)
 
 # Check if CUDA is available and add CUDA source files
 find_package(CUDA)
+
 if(CUDA_FOUND)
     enable_language(CUDA) #enable NVCC compiler
 
@@ -51,12 +52,12 @@ if(CUDA_FOUND)
     add_definitions(-DUSE_CUDA)
 
     # Set policy to use CUDA_ARCHITECTURES
-    #cmake_policy(SET CMP0104 NEW)
+    cmake_policy(SET CMP0104 NEW)
 
     # Set CUDA_ARCHITECTURES to compute capability 6.1
-    #set(CMAKE_CUDA_ARCHITECTURES 61 62 70 72 75 80 86)
-    set(CMAKE_CUDA_ARCHITECTURES 80)
+    set(CMAKE_CUDA_ARCHITECTURES 61 62 70 72 75 80 86)
+    #set(CMAKE_CUDA_ARCHITECTURES 80)
 endif()
 
-#add_subdirectory(LAM)
+add_subdirectory(LAM)
 add_subdirectory(test)
