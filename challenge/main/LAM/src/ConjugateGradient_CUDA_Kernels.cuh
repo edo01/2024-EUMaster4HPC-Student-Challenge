@@ -66,9 +66,7 @@ partialDot(const FloatingType * a, const FloatingType * b, FloatingType * partia
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     unsigned int t = threadIdx.x;
     // Load elements and check boundary condition
-    if(tid >= size){
-        tmp[t] = 0;
-    }
+    tmp[t] = 0;
     while(tid < size) {
         tmp[t] += a[tid] * b[tid];
         tid += blockDim.x * gridDim.x;
