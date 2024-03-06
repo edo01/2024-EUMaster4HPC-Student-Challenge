@@ -59,10 +59,10 @@ namespace LAM {
         unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
         unsigned int t = threadIdx.x;
         // Load elements and check boundary condition
-        if(tid < size){
-            tmp[t] = a[tid] * b[tid];
-        } else {
-            tmp[t] = 0;
+        tmp[t] = 0;
+        while(tid < size) {
+            tmp[t] += a[tid] * b[tid];
+            tid += blockDim.x * gridDim.x;
         }
         __syncthreads();
         // Reduce tmp
@@ -89,7 +89,12 @@ namespace LAM {
         FloatingType * partialSum;
         cudaMalloc(&partialSum, sizeof(FloatingType) * gridSize);
         partialDot<FloatingType, gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(a, b, partialSum, size);
-        reduce<FloatingType, 1, blockSize><<<1,blockSize, 0, stream>>>(partialSum, res, gridSize); // TODO deal with the case in which only one reduce is not enough
+        int s = gridSize;
+        while(s > 1){
+            reduce<FloatingType, gridSize, blockSize><<<gridSize,blockSize, 0, stream>>>(partialSum, partialSum, s);
+            s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+        }
+        cudaMemcpy(res, partialSum, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
         cudaFree(partialSum);
     }
 
