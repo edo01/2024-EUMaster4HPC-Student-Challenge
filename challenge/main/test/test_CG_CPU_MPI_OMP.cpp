@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <mpi.h>
+#include <omp.h>
 #include <unistd.h>
 
 
@@ -41,12 +42,18 @@ int load_mode(){
 
     {
         PRINT_RANK0("Reading matrix from file ...\n");
+        auto start = high_resolution_clock::now();
         bool success_read_matrix = CG_P.load_matrix_from_file(input_file_matrix);
+        auto end =  high_resolution_clock::now();
+        auto duration = duration_cast<milliseconds>(end - start);
+
+
         if(!success_read_matrix)
         {
             PRINT_ERR_RANK0("Failed to read matrix\n");
             return 1;
         }
+        PRINT_RANK0("Time elapsed for reading the matrix:%f s\n", duration.count()/1000.0);
         PRINT_RANK0("Done\n");
         PRINT_RANK0("\n");
 
@@ -93,9 +100,15 @@ int gen_mode(){
     PRINT_RANK0("Command line arguments:\n");
     PRINT_RANK0("  rows:    %lu\n", rows);
     PRINT_RANK0("  cols:    %lu\n", cols);
+    PRINT_RANK0("  size of the problem: %f GB\n", rows*cols*sizeof(double)/1024.0/1024.0/1024.0);
     PRINT_RANK0("  output_file_sol:   %s\n", output_file_sol);
     PRINT_RANK0("  max_iters:         %d\n", max_iters);
     PRINT_RANK0("  rel_error:         %e\n", rel_error);
+    //print number of processes
+    PRINT_RANK0("  Number of processes: %d\n", size);
+    //print number of threads
+    PRINT_RANK0("  Number of threads: %d\n", omp_get_max_threads());
+
     PRINT_RANK0("\n");
 
 
@@ -105,12 +118,16 @@ int gen_mode(){
 
     {
         PRINT_RANK0("Reading matrix from file ...\n");
+        auto start = high_resolution_clock::now();
         bool success_read_matrix = CG_P.generate_matrix(rows, cols);
+        auto end =  high_resolution_clock::now();
+        auto duration = duration_cast<milliseconds>(end - start);
         if(!success_read_matrix)
         {
             PRINT_ERR_RANK0("Failed to read matrix\n");
             return 1;
         }
+        PRINT_RANK0("Time elapsed for generating the matrix:%f s\n", duration.count()/1000.0);
         PRINT_RANK0("Done\n");
         PRINT_RANK0("\n");
 

@@ -4,12 +4,11 @@
 #include <chrono>
 #include <iostream>
 #include <mpi.h>
-#include <cuda.h>
 
 #include "LAM.hpp"
 
-#define PRINT_RANK0(...) if(myRank==0) printf(__VA_ARGS__)
-#define PRINT_ERR_RANK0(...) if(myRank==0) fprintf(stderr, __VA_ARGS__)
+#define PRINT_RANK0(...) if(rank==0) printf(__VA_ARGS__)
+#define PRINT_ERR_RANK0(...) if(rank==0) fprintf(stderr, __VA_ARGS__)
 
 using namespace LAM;
 
@@ -46,8 +45,30 @@ int main(int argc, char ** argv)
 
 
     using namespace std::chrono;
+    
+    ConjugateGradient_MultiGPUS_CUDA_NCCL<double> CG_P;
 
-    ConjugateGradient_MultiGPUS_CUDA_NCCL<double> CG_P = new ConjugateGradient_MultiGPUS_CUDA_NCCL<double>(input_file_matrix, input_file_rhs);
+    {
+        PRINT_RANK0("Reading matrix from file ...\n");
+        bool success_read_matrix = CG_P.load_matrix_from_file(input_file_matrix);
+        if(!success_read_matrix)
+        {
+            PRINT_ERR_RANK0("Failed to read matrix\n");
+            return 1;
+        }
+        PRINT_RANK0("Done\n");
+        PRINT_RANK0("\n");
+
+        PRINT_RANK0("Reading right hand side from file ...\n");
+        bool success_read_rhs = CG_P.load_rhs_from_file(input_file_rhs);
+        if(!success_read_rhs)
+        {
+            PRINT_ERR_RANK0("Failed to read right hand side\n");
+            return 2;
+        }
+        PRINT_RANK0("Done\n");
+        PRINT_RANK0("\n");
+    }
 
     PRINT_RANK0("Solving the system ...\n");
 
@@ -56,22 +77,8 @@ int main(int argc, char ** argv)
     auto end =  high_resolution_clock::now();
 
     auto duration = duration_cast<milliseconds>(end - start);
-
+ 
     PRINT_RANK0("Time elapsed using parallel implementation:%f s\n", duration.count()/1000.0);
-    // sequential execution
-/*
-    ConjugateGradient<double> CG_baseline(std::make_unique<MelBLAS_baseline<double>>());
-
-    start = high_resolution_clock::now();
-    CG_baseline.solve(A, b, x, size, max_iters, rel_error);
-    end =  high_resolution_clock::now();
-
-    auto duration_baseline = duration_cast<milliseconds>(end - start);
-
-    std::cout << "Time elapsed using baseline implementation:" << duration_baseline.count()/1000.0 << " s"<< std::endl;
-
-    std::cout << "Total speedup:" << duration_baseline.count()/duration.count() << std::endl;
-*/
     PRINT_RANK0("Done\n");
     PRINT_RANK0("\n");
 
@@ -86,8 +93,13 @@ int main(int argc, char ** argv)
     PRINT_RANK0("\n");
 
     PRINT_RANK0("Finished successfully\n");
+    printf("rank %d: Finished successfully\n", rank);
+    fflush(stdout);
 
     MPI_Finalize();
+
+    printf("Finished successfully\n");
+    fflush(stdout);
 
     return 0;
 }

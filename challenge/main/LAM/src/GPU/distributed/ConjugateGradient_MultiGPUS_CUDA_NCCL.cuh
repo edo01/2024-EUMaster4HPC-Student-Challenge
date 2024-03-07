@@ -20,11 +20,11 @@
 namespace LAM
 {
 
-    //constexpr int NUM_BLOCKS=1000;
-    //constexpr int NUM_THREADS=1024;
+    constexpr int NUM_BLOCKS=1000;
+    constexpr int NUM_THREADS=1024;
 
-    constexpr int NUM_BLOCKS=1;
-    constexpr int NUM_THREADS=32;
+    //constexpr int NUM_BLOCKS=1;
+    //constexpr int NUM_THREADS=32;
 
     template<typename FloatingType>
     class ConjugateGradient_MultiGPUS_CUDA_NCCL:
@@ -76,12 +76,12 @@ namespace LAM
             //destroy the streams
             ~ConjugateGradient_MultiGPUS_CUDA_NCCL()
             {   
-                /*if(_rows_per_device != nullptr)
+                if(_rows_per_device != nullptr)
                     cudaFreeHost(_rows_per_device);
                 if(_x != nullptr)
                     cudaFreeHost(_x);
                 if(_rhs != nullptr)
-                    cudaFreeHost(_rhs);*/
+                    cudaFreeHost(_rhs);
                 printf("Destructor of ConjugateGradient_MultiGPUS_CUDA_NCCL\n");
                 fflush(stdout);
                 for(int i = 0; i < _numDevices; i++)

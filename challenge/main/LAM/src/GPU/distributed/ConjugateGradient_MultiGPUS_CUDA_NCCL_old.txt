@@ -1,218 +1,7 @@
-//#include "ConjugateGradient_MultiGPUS_CUDA_NCCL.cuh"
+#include "ConjugateGradient_MultiGPUS_CUDA_NCCL.cuh"
 
 namespace LAM
 {
-    constexpr int WARP_SIZE = 32;
-
-        /**
-     * ---------------------------------------------------------------
-     * -----------------  CUDA Kernels  ------------------------------
-     * ---------------------------------------------------------------
-     */
-
-    template<typename FloatingType>
-    __global__ void divide(const FloatingType * a, const FloatingType * b, FloatingType * res)
-    {
-        *res = *a / *b;
-    }
-
-    template<typename FloatingType>
-    __device__ void warpReduce(volatile FloatingType * a, int t)
-    {
-        unsigned int w = WARP_SIZE;
-        while (w >= 1) {
-            a[t] += a[t + w];
-            w >>= 1;
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void reduce(const FloatingType * a, FloatingType * sum, size_t size)
-    {
-        // Allocate shared memory
-        __shared__ FloatingType tmp[NUM_THREADS];
-        // Retrieve global thread id
-        unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
-        // Load element
-        if (tid < size){
-            tmp[threadIdx.x] = a[tid];
-        } else {
-            tmp[threadIdx.x] = 0;
-        }
-        __syncthreads();
-
-        for (unsigned int s = blockDim.x / 2; s > WARP_SIZE; s /= 2){
-            if(threadIdx.x < s){
-                tmp[threadIdx.x] +=  tmp[threadIdx.x + s];
-            }
-            __syncthreads();
-        }
-
-        if(threadIdx.x < WARP_SIZE){
-            warpReduce<FloatingType>(tmp, threadIdx.x);
-        }
-
-        // Let the thread 0 write its result to main memory
-        if(threadIdx.x == 0){
-            //!!sum non è un array
-            sum[blockIdx.x] = tmp[0];
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void partialDot(const FloatingType * a, const FloatingType * b, FloatingType * partialDot, size_t size)
-    {
-        // Allocate shared memory
-        __shared__ FloatingType tmp[NUM_THREADS];
-        // Retrieve local and global thread id
-        unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-        unsigned int t = threadIdx.x;
-        // Load elements and check boundary condition
-        if(tid < size){
-            tmp[t] = a[tid] * b[tid];
-        } else {
-            tmp[t] = 0;
-        }
-        __syncthreads();
-        // Reduce tmp
-        for(unsigned int s = blockDim.x /2; s > WARP_SIZE; s /= 2){
-            if(t < s){
-                tmp[t] += tmp[t + s];
-            }
-            __syncthreads();
-        }
-
-        if(t < WARP_SIZE){
-            warpReduce<FloatingType>(tmp, t);
-        }
-
-        // Let the thread 0 for this block write its result to main memory
-        if(t == 0) {
-            partialDot[blockIdx.x] = tmp[0];
-        }
-    }
-
-    template<typename FloatingType>
-    __host__ void dot(const FloatingType* a, const FloatingType* b, FloatingType* res, size_t size, cudaStream_t stream)
-    {
-        FloatingType * partialSum;
-        //!! I think this should be changed with cudaMallocAsync
-        cudaMalloc(&partialSum, sizeof(FloatingType) * NUM_BLOCKS);
-        partialDot<FloatingType><<<NUM_BLOCKS,NUM_THREADS, 0, stream>>>(a, b, partialSum, size);
-        //!! qui dovrebbe essere NUM_BLOCKS e non NUM_THREADS perché partialSum è un array di NUM_BLOCKS elementi
-        reduce<FloatingType><<<1,NUM_THREADS, 0, stream>>>(partialSum, res, NUM_BLOCKS); // TODO deal with the case in which only one reduce is not enough
-        
-        cudaFree(partialSum);
-    }
-
-    template<typename FloatingType>
-    __global__ void axpby(const FloatingType * alpha, const FloatingType * x, const FloatingType * beta, FloatingType * y, size_t size)
-    {
-        // y = alpha * x + beta * y
-        // Retrieve global thread id
-        unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-        unsigned int stride = blockDim.x * gridDim.x;
-        // Check boundary
-        for(unsigned int i = tid; i < size; i += stride){
-            y[tid] *= *beta;
-            y[tid] += *alpha * x[tid];
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void axpy(const FloatingType * alpha, const FloatingType * x, FloatingType * y, size_t size)
-    {
-        // y = alpha * x +  y
-        // Retrieve global thread id
-        unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-        unsigned int stride = blockDim.x * gridDim.x;
-        // Check boundary
-        for(unsigned int i = tid; i < size; i += stride){
-            y[tid] += *alpha * x[tid];
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void minusaxpy(const FloatingType * alpha, const FloatingType * x, FloatingType * y, size_t size)
-    {
-        // y = alpha * x +  y
-        // Retrieve global thread id
-        unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-        unsigned int stride = blockDim.x * gridDim.x;
-        // Check boundary
-        for(unsigned int i = tid; i < size; i += stride) {
-            y[tid] -= *alpha * x[tid];
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void xpby( const FloatingType * x, const FloatingType *beta, FloatingType * y, size_t size)
-    {
-        // y = alpha * x + beta * y
-        // Retrieve global thread id
-        unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
-        unsigned int stride = blockDim.x * gridDim.x;
-        // Check boundary
-        for(unsigned int i = tid; i < size; i += stride){
-            y[tid] *= *beta;
-            y[tid] += x[tid];
-        }
-    }
-
-    template<typename FloatingType>
-    __global__ void gemv(FloatingType alpha, const FloatingType * A, const FloatingType * x, FloatingType beta, FloatingType * y, size_t num_rows, size_t num_cols, unsigned int stride_row)
-    {
-        // y = alpha * A * x + beta * y
-
-        // Allocate shared memory
-        __shared__ FloatingType tmp[NUM_THREADS];
-        // Retrieve ids
-        unsigned int row = blockIdx.x + stride_row;
-        unsigned int col = threadIdx.x;
-        // Number of elements each thread has to load
-        unsigned int n = (num_cols % NUM_THREADS == 0) ? num_cols / NUM_THREADS : num_cols / NUM_THREADS + 1;
-        // Load elements
-        tmp[col] = 0;
-        while(n > 0){
-            size_t col_new = col + (n - 1) * blockDim.x;
-
-            if(col_new < num_cols && row < num_rows) {
-                tmp[col] += alpha * A[row * num_cols + col_new] * x[col_new];
-            }
-            n--;
-        }
-        __syncthreads();
-
-        // Reduce tmp
-        for (unsigned int s = blockDim.x / 2; s > WARP_SIZE; s /= 2){
-            if (col < s){
-                tmp[col] += tmp[col + s];
-            }
-            __syncthreads();
-        }
-
-        if(col < WARP_SIZE){
-            warpReduce<FloatingType>(tmp, col);
-        }
-
-        // Let the thread 0 within the block write the partial reduction into main memory
-        if(col == 0 && row < num_rows) {
-            y[row] *= beta;
-            y[row] += tmp[0];
-        }
-    }
-
-    template<typename FloatingType>
-    __host__ void gemv_host(FloatingType alpha, const FloatingType * A, FloatingType * x, FloatingType beta, FloatingType * y, size_t num_rows, size_t num_cols, cudaStream_t stream)
-    {
-        unsigned int processedRow = 0;
-        unsigned int numKernels = (num_rows % NUM_BLOCKS == 0) ? num_rows / NUM_BLOCKS : num_rows / NUM_BLOCKS + 1;
-        while(numKernels > 0){
-            gemv<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>(alpha, A, x, beta, y, num_rows, num_cols, processedRow);
-            processedRow += NUM_BLOCKS;
-            numKernels--;
-        }
-    }
 
     template<typename FloatingType>
     bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::solve(int max_iters, FloatingType rel_error)
@@ -226,12 +15,25 @@ namespace LAM
         // these variables are only needed in the device 0 of rank 0
         FloatingType * b_dev, * x_dev, * alpha_dev, * beta_dev, * bb_dev;
         FloatingType * rr_dev, * rr_new_dev, * r_dev, * pAp_dev, * Ap0_dev;
+
+        // const to store on the device 
+        //FloatingType * const_uno_dev, * const_zero_dev;
+        FloatingType const_uno_dev=1, const_zero_dev=0;
+
+        // module of the rhs and of the residual on the host
         FloatingType * rr, * bb;
+        FloatingType * dot_res, *alpha_host, *beta_host;
+
 
         bool stop = false;
-        rr = new FloatingType;
-        bb = new FloatingType;
+        cudaHostAlloc(&rr, sizeof(FloatingType), cudaHostAllocDefault);
+        cudaHostAlloc(&bb, sizeof(FloatingType), cudaHostAllocDefault);
         int num_iters=1;
+
+        // variables on the host
+        cudaHostAlloc(&dot_res, sizeof(FloatingType), cudaHostAllocDefault);
+        cudaHostAlloc(&alpha_host, sizeof(FloatingType), cudaHostAllocDefault);
+        cudaHostAlloc(&beta_host, sizeof(FloatingType), cudaHostAllocDefault);
 
         /*
         *  ---------------------------------------------------------------
@@ -259,25 +61,66 @@ namespace LAM
 
         // Allocate the in device 0 of rank 0 the other variables
         if (rank == 0) {
+            printf("Allocating memory on the device 0 of rank 0\n");
+            fflush(stdout);
             cudaSetDevice(0);
+            //allocate the rhs and the result of the CG method
             cudaMalloc(&b_dev, sizeof(FloatingType) * _num_cols);
             cudaMalloc(&x_dev, sizeof(FloatingType) * _num_cols);
+            //allocate alpha and beta on the device
             cudaMalloc(&alpha_dev, sizeof(FloatingType));
             cudaMalloc(&beta_dev, sizeof(FloatingType));
+            //allocate the module of the rhs and the residual
             cudaMalloc(&bb_dev, sizeof(FloatingType));
             cudaMalloc(&rr_dev, sizeof(FloatingType));
             cudaMalloc(&rr_new_dev, sizeof(FloatingType));
             cudaMalloc(&r_dev, sizeof(FloatingType) * _num_cols);
             cudaMalloc(&pAp_dev, sizeof(FloatingType));
-            cudaMalloc(&Ap0_dev, sizeof(FloatingType) * _num_cols); // Ap0_dev is located in device 0 and will collect all the result from the devices
 
-            cudaMemcpyAsync(b_dev, _rhs, sizeof(FloatingType) * _num_cols, cudaMemcpyHostToDevice, streams[0]);
-            cudaMemsetAsync(x_dev, 0, sizeof(FloatingType) * _num_cols, streams[0]); // x = 0
-            cudaMemcpyAsync(r_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, streams[0]); // r = b
-            cudaMemcpyAsync(p_dev[0], b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, streams[0]); // p = b
+            // Ap0_dev is located in device 0 and will collect all the result from the devices
+            cudaMalloc(&Ap0_dev, sizeof(FloatingType) * _num_cols); 
 
-            dot<FloatingType>(b_dev, b_dev, bb_dev, _num_cols, streams[0]); // bb = b * b
-            cudaMemcpyAsync(rr_dev, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, streams[0]); // rr = bb
+            // constant set on the device
+            //cudaMallocHost(&const_uno_dev, sizeof(FloatingType));
+            //cudaMallocHost(&const_zero_dev, sizeof(FloatingType));
+            /*cudaMalloc(&const_uno_dev, sizeof(FloatingType));
+            cudaMalloc(&const_zero_dev, sizeof(FloatingType));
+            FloatingType uno = 1;
+            FloatingType zero = 0;
+            cudaMemcpy(const_uno_dev, &uno, sizeof(FloatingType), cudaMemcpyHostToDevice);
+            cudaMemcpy(const_zero_dev, &zero, sizeof(FloatingType), cudaMemcpyHostToDevice);*/
+
+            // copy rhs to device
+            cudaMemcpy(b_dev, _rhs, sizeof(FloatingType) * _num_cols, cudaMemcpyHostToDevice);
+            // set the initial value of x to 0
+            cudaMemset(x_dev, 0, sizeof(FloatingType) * _num_cols);
+            // set the initial value of r to b
+            cudaMemcpy(r_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice); 
+            // set the initial value of p to b
+            cudaMemcpy(p_dev[0], b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice); 
+
+            // compute the module of the rhs
+            cublasStatus_t status = cublasDdot(cublas_handler[0], _num_cols, b_dev, 1, b_dev, 1, dot_res);
+            
+            if (status != CUBLAS_STATUS_SUCCESS) {
+                printf("cublasDot failed\n");
+                fflush(stdout);
+                return false;
+            }
+            printf("bb: %f\n", *dot_res);
+            fflush(stdout);
+
+            // since dot_res is a pointer to the result of the dot product in the HOST, it is necessary to copy the
+            // result back to the host
+            cudaMemcpy(bb_dev, dot_res, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
+            *bb = *dot_res;
+            //dot<FloatingType>(b_dev, b_dev, bb_dev, _num_cols, streams[0]);
+
+            // set the initial value of rr to bb
+            cudaMemcpy(rr_dev, dot_res, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
+            *rr = *dot_res;
+
+            printf("initialization done\n");
         }
 
         /*
@@ -322,8 +165,11 @@ namespace LAM
         */ 
 
         // CG Iterations
-        for(num_iters = 1; num_iters <= 20; num_iters++)
+        for(num_iters = 1; num_iters <= max_iters; num_iters++)
         {
+
+            printf("Broadcast p\n");
+            fflush(stdout);
 
             // Copy p from device 0 to all other devices to allow matrix-vector multiplication
             ncclGroupStart();
@@ -332,24 +178,61 @@ namespace LAM
             }
             ncclGroupEnd();
 
-            // Performs matrix-vector multiplication in each device of each rank
-            #pragma omp parallel for num_threads(_numDevices)
-            for(int i = 0; i < _numDevices; i++){
-                cudaSetDevice(i);
-                gemv_host<FloatingType>(1.0, _A_dev[i], p_dev[i], 0.0, Ap_dev[i], _rows_per_device[i], _num_cols, streams[i]);
+            // Synchronizing on CUDA stream to complete NCCL communication
+            for (int i = 0; i < _numDevices; i++) {
+                cudaStreamSynchronize(streams[i]);
             }
 
-            //print Ap_dev
-            /*for(int i=0; i < _numDevices; i++){
+            // Performs matrix-vector multiplication in each device of each rank
+            //#pragma omp parallel for num_threads(_numDevices)
+            for(int i = 0; i < _numDevices; i++){
                 cudaSetDevice(i);
-                FloatingType * Ap = new FloatingType[_rows_per_device[i]];
-                cudaMemcpy(Ap, Ap_dev[i], sizeof(FloatingType) * _rows_per_device[i], cudaMemcpyDeviceToHost);
-                for(int j = 0; j < _rows_per_device[i]; j++){
-                    printf("device %d) ap[%d] = %f\n", i, j, Ap[j]);
+                printf("Device %d: matrix-vector multiplication\n", i);
+                printf("p_dev[0]: ");
+
+                FloatingType * p_host = (FloatingType *)malloc(sizeof(FloatingType) * _num_cols);
+                cudaMemcpy(p_host, p_dev[i], sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToHost);
+                for(int j = 0; j < _num_cols; j++){
+                    printf("%f ", p_host[j]);
                 }
-                printf("\n");
-                delete[] Ap;
-            }*/
+                fflush(stdout);
+                free(p_host);
+
+                //print rows_per_device
+                printf("rows_per_device: %lu\n", _rows_per_device[i]);
+                fflush(stdout);
+                //print number of columns
+                printf("number of columns: %lu\n", _num_cols);
+                fflush(stdout);
+
+                //print A_dev[i]
+                FloatingType * A_host = (FloatingType *)malloc(sizeof(FloatingType) * _num_cols * _rows_per_device[i]);
+                cudaMemcpy(A_host, _A_dev[i], sizeof(FloatingType) * _num_cols * _rows_per_device[i], cudaMemcpyDeviceToHost);
+                for(int j = 0; j < _rows_per_device[i]; j++){
+                    for(int k = 0; k < _num_cols; k++){
+                        printf("%f ", A_host[j * _num_cols + k]);
+                    }
+                    printf("\n");
+                }
+                fflush(stdout);
+                free(A_host);
+
+                // check cublasDgemv
+                cudaDeviceSynchronize();
+                cublasStatus_t status = cublasDgemv(cublas_handler[i], CUBLAS_OP_N, _rows_per_device[i], _num_cols,
+                    &const_uno_dev, _A_dev[i], _rows_per_device[i]*_num_cols, p_dev[i], 1, &const_zero_dev, Ap_dev[i], 1);
+
+                if (status != CUBLAS_STATUS_SUCCESS) {
+                    printf("cublasDgemv failed\n");
+                    fflush(stdout);
+                    return false;
+                }
+
+                cudaDeviceSynchronize();
+                
+                printf("Device %d: matrix-vector multiplication done\n", i);
+                fflush(stdout);
+            }
             
             // All-To-One Gather to collect all the results of the mat-vec multiplication in device 0 in rank 0
             ncclGroupStart();
@@ -379,18 +262,6 @@ namespace LAM
             }
             ncclGroupEnd();
 
-            //print Ap0_dev
-            /*if(rank == 0){
-                cudaSetDevice(0);
-                FloatingType * Ap0 = new FloatingType[_num_cols];
-                cudaMemcpy(Ap0, Ap0_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToHost);
-                for(int i = 0; i < _num_cols; i++){
-                    printf("ap0[%d] = %f\n", i, Ap0[i]);
-                }
-                printf("\n");
-                delete[] Ap0;
-            }*/
-
             // Synchronizing on CUDA stream to complete NCCL communication
             for (int i = 0; i < _numDevices; i++) {
                 cudaStreamSynchronize(streams[i]);
@@ -398,34 +269,39 @@ namespace LAM
 
             // Device 0 in rank 0 carries on all the other operation involved in the iteration of the CG method
             if(rank == 0) {
+
                 cudaSetDevice(0);
 
-                dot<FloatingType>(p_dev[0], Ap0_dev, pAp_dev, _num_cols, streams[0]);
+                //dot<FloatingType>(p_dev[0], Ap0_dev, pAp_dev, _num_cols, streams[0]);
 
-                divide<FloatingType><<<1, 1, 0, streams[0]>>>(rr_dev, pAp_dev, alpha_dev);
+                    // pAp=p*Ap
+                    cublasDdot(cublas_handler[0], _num_cols, p_dev[0], 1, Ap0_dev, 1, dot_res);
+                    cudaMemcpy(pAp_dev, dot_res, sizeof(FloatingType), cudaMemcpyHostToDevice);
 
-                axpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>
-                        (alpha_dev, p_dev[0], x_dev, _num_cols);
+                    //calculate alpha_dev= rr/pAp
+                    *alpha_host = *rr/(*dot_res);
+                    cudaMemcpy(alpha_dev, dot_res, sizeof(FloatingType), cudaMemcpyHostToDevice);
 
-                minusaxpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>
-                        (alpha_dev, Ap0_dev, r_dev, _num_cols);
+                    //calculate x=alpha*p+x
+                    cublasDaxpy(cublas_handler[0], _num_cols, alpha_dev, p_dev[0], 1, x_dev, 1);
+                
+                    //calculate r=-alpha*Ap+r
+                    *alpha_host = -*alpha_host;
+                    cudaMemcpy(alpha_dev, &alpha_host, sizeof(FloatingType), cudaMemcpyHostToDevice);
+                    cublasDaxpy(cublas_handler[0], _num_cols, alpha_dev, Ap0_dev, 1, r_dev, 1);
+
+                    //calculate rr_new=r*r
+                    cublasDdot(cublas_handler[0], _num_cols, r_dev, 1, r_dev, 1, dot_res);
+                    cudaMemcpy(rr_new_dev, dot_res, sizeof(FloatingType), cudaMemcpyHostToDevice);
+
+                    //calculate beta=rr_new/rr
+                    *beta_host = *dot_res/(*rr);
+                    cudaMemcpy(beta_dev, beta_host, sizeof(FloatingType), cudaMemcpyHostToDevice);
+
+                    // rr=rr_new
+                    *rr = *dot_res;
 
                 
-                dot<FloatingType>(r_dev, r_dev, rr_new_dev, _num_cols, streams[0]);
-
-               
-                divide<FloatingType><<<1, 1, 0, streams[0]>>>(rr_new_dev, rr_dev, beta_dev);
-
-                
-                //cudaMemcpyAsync(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, streams[0]);
-
-                //cudaMemcpyAsync(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
-                //cudaMemcpyAsync(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
-
-                cudaMemcpy(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
-                cudaMemcpy(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
-                cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
-
 
                 cudaDeviceSynchronize();
 
@@ -447,7 +323,8 @@ namespace LAM
             // Device 0 in rank 0 computes the new value of p that will be broadcast to all other devices in the next iteration
             if (rank == 0){
                 cudaSetDevice(0);
-                xpby<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>(r_dev, beta_dev, p_dev[0], _num_cols);
+                //calculate p=beta*p+r
+                cublasDaxpy(cublas_handler[0], _num_cols, beta_dev, p_dev[0], 1, r_dev, 1);
             }
         }
 
@@ -475,35 +352,38 @@ namespace LAM
 
             // Copy solution to host
             cudaSetDevice(0);
-            cudaMemcpyAsync(_x, x_dev, _num_cols * sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
+            cudaMemcpy(_x, x_dev, _num_cols * sizeof(FloatingType), cudaMemcpyDeviceToHost);
             printf("moved x to host\n");
             fflush(stdout);
 
             // Free GPU memory
-            cudaFreeAsync(alpha_dev, streams[0]);
-            cudaFreeAsync(beta_dev, streams[0]);
-            cudaFreeAsync(bb_dev, streams[0]);
-            cudaFreeAsync(rr_dev, streams[0]);
-            cudaFreeAsync(rr_new_dev, streams[0]);
-            cudaFreeAsync(r_dev, streams[0]);
-            cudaFreeAsync(p_dev, streams[0]);
-            cudaFreeAsync(Ap0_dev, streams[0]);
-            cudaFreeAsync(pAp_dev, streams[0]);
+            cudaFree(alpha_dev);
+            cudaFree(beta_dev);
+            cudaFree(bb_dev);
+            cudaFree(rr_dev);
+            cudaFree(rr_new_dev);
+            cudaFree(r_dev);
+            cudaFree(p_dev);
+            cudaFree(Ap0_dev);
+            cudaFree(pAp_dev);
             
             printf("free GPU memory of rank 0\n");
             fflush(stdout);
 
             // Free CPU memory
-            delete bb;
-            delete rr;
+            cudaFreeHost(dot_res);
+            cudaFreeHost(alpha_host);
+            cudaFreeHost(beta_host);
+            cudaFreeHost(rr);
+            cudaFreeHost(bb);
         }
 
         // All devices free their allocated memory and destroy streams
-        #pragma omp parallel for num_threads(_numDevices)
+        //#pragma omp parallel for num_threads(_numDevices)
         for(int i = 0; i < _numDevices; i++){
             cudaSetDevice(i);
-            cudaFreeAsync(Ap_dev[i], streams[i]);
-            cudaFreeAsync(p_dev[i], streams[i]);
+            cudaFree(Ap_dev[i]);
+            cudaFree(p_dev[i]);
         }
 
         printf("free GPU memory of other ranks\n");
@@ -614,7 +494,7 @@ namespace LAM
             fflush(stdout);
             cudaSetDevice(k);
             // I'm pretty sure that these copies are done in serial, so it is not efficient 
-            cudaMemcpyAsync(_A_dev[k], h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaMemcpyHostToDevice, streams[k]);
+            cudaMemcpy(_A_dev[k], h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaMemcpyHostToDevice);
         }
 
         // Close the file
@@ -705,7 +585,7 @@ namespace LAM
 
 
 
-template class LAM::ConjugateGradient_MultiGPUS_CUDA_NCCL<float>;
+//template class LAM::ConjugateGradient_MultiGPUS_CUDA_NCCL<float>;
 template class LAM::ConjugateGradient_MultiGPUS_CUDA_NCCL<double>;
 
 }
