@@ -7,6 +7,7 @@
 
 #ifdef USE_CUDA
 #include "../src/GPU/distributed/ConjugateGradient_MultiGPUS_CUDA_NCCL.cuh"
+#include "../src/GPU/distributed/ConjugateGradient_MultiGPUS_CUDA_MPI.cuh"
 #include "../src/GPU/local/ConjugateGradient_GPU_CUDA.cuh"
 #include "../src/GPU/local/ConjugateGradient_MultiGPUS_CUDA.cuh"
 #endif

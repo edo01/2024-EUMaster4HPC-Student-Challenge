@@ -12,7 +12,6 @@
 #include <cublas_v2.h>
 #include <omp.h>
 #include "../../ConjugateGradient.hpp"
-
 #define PRINT_RANK0(...) if(rank==0) printf(__VA_ARGS__)
 #define PRINT_ERR_RANK0(...) if(rank==0) fprintf(stderr, __VA_ARGS__)
 
@@ -22,9 +21,6 @@ namespace LAM
 
     constexpr int NUM_BLOCKS=1000;
     constexpr int NUM_THREADS=1024;
-
-    //constexpr int NUM_BLOCKS=1;
-    //constexpr int NUM_THREADS=32;
 
     template<typename FloatingType>
     class ConjugateGradient_MultiGPUS_CUDA_NCCL:
@@ -48,7 +44,7 @@ namespace LAM
                 }
 
                         // Initialize CUBLAS
-                cublas_handler = new cublasHandle_t[_numDevices];
+                /*cublas_handler = new cublasHandle_t[_numDevices];
                 cublasStatus_t cudaStatus;
                 for(int i = 0; i < _numDevices; i++){
                     cudaSetDevice(i);
@@ -60,7 +56,7 @@ namespace LAM
                         printf("cublasCreate success\n");
                         fflush(stdout);
                     }
-                }
+                }*/
 
             }
 
@@ -82,18 +78,15 @@ namespace LAM
                     cudaFreeHost(_x);
                 if(_rhs != nullptr)
                     cudaFreeHost(_rhs);
-                printf("Destructor of ConjugateGradient_MultiGPUS_CUDA_NCCL\n");
                 fflush(stdout);
                 for(int i = 0; i < _numDevices; i++)
                     cudaStreamDestroy(streams[i]);
-                printf("Streams destroyed\n");
                 fflush(stdout);
 
                 //clean _A_dev
                 for(int i = 0; i < _numDevices; i++)
                     if(_A_dev[i] != nullptr)
                         cudaFree(_A_dev[i]);
-                printf("_A_dev destroyed\n");
                 fflush(stdout);
             }
 
@@ -119,7 +112,7 @@ namespace LAM
             size_t _offset;
             
             cudaStream_t *streams;
-            cublasHandle_t *cublas_handler;
+            //cublasHandle_t *cublas_handler;
 
             //size_t size;
             int _numDevices;

@@ -1,10 +1,32 @@
-#include "ConjugateGradient_MultiGPUS_CUDA_NCCL.cuh"
+#include "ConjugateGradient_MultiGPUS_CUDA_MPI.cuh"
 
 namespace LAM
 {
     constexpr int WARP_SIZE = 32;
+    constexpr int NUM_BLOCKS=1000;
+    constexpr int NUM_THREADS=1024;
 
-        /**
+    static uint64_t getHostHash(const char* string) {
+    // Based on DJB2a, result = result * 33 ^ char
+    uint64_t result = 5381;
+    for (int c = 0; string[c] != '\0'; c++){
+        result = ((result << 5) + result) ^ string[c];
+    }
+    return result;
+    }
+
+
+    static void getHostName(char* hostname, int maxlen) {
+        gethostname(hostname, maxlen);
+        for (int i=0; i< maxlen; i++) {
+            if (hostname[i] == '.') {
+                hostname[i] = '\0';
+                return;
+            }
+        }
+    }
+
+    /**
      * ---------------------------------------------------------------
      * -----------------  CUDA Kernels  ------------------------------
      * ---------------------------------------------------------------
@@ -215,8 +237,7 @@ namespace LAM
     }
 
     template<typename FloatingType>
-    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::solve(int max_iters, FloatingType rel_error)
-    {
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::solve(int max_iters, FloatingType rel_error){
         //initializing MPI
         int rank, num_procs;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -242,24 +263,20 @@ namespace LAM
            data for computating the matrix-vector multiplication */
         
         // stores the pointer to the result of the matrix-vector multiplication of the i-th device
-        FloatingType * Ap_dev[_numDevices];
+        FloatingType * Ap_dev;
 
         /* stores the pointer to the vector for the matrix-vector multiplication of the i-th device
            of the i-th device */
-        FloatingType * p_dev[_numDevices];
+        FloatingType * p_dev;
 
-        // Allocate p and Ap on all devices
-        #pragma omp parallel for num_threads(_numDevices)
-        for(int i = 0; i < _numDevices; i++){
-            cudaSetDevice(i);
- 
-            cudaMalloc(&Ap_dev[i], _rows_per_device[i] * sizeof(FloatingType));
-            cudaMalloc(&p_dev[i], _num_cols * sizeof(FloatingType));
-        }
+        cudaSetDevice(_device_id);
 
-        // Allocate the in device 0 of rank 0 the other variables
+        cudaMalloc(&Ap_dev, _num_local_rows * sizeof(FloatingType));
+        cudaMalloc(&p_dev, _num_cols * sizeof(FloatingType));
+
+
+        // Allocate ONLY in device 0 of rank 0 the other variables
         if (rank == 0) {
-            cudaSetDevice(0);
             cudaMalloc(&b_dev, sizeof(FloatingType) * _num_cols);
             cudaMalloc(&x_dev, sizeof(FloatingType) * _num_cols);
             cudaMalloc(&alpha_dev, sizeof(FloatingType));
@@ -271,49 +288,19 @@ namespace LAM
             cudaMalloc(&pAp_dev, sizeof(FloatingType));
             cudaMalloc(&Ap0_dev, sizeof(FloatingType) * _num_cols); // Ap0_dev is located in device 0 and will collect all the result from the devices
 
-            cudaMemcpyAsync(b_dev, _rhs, sizeof(FloatingType) * _num_cols, cudaMemcpyHostToDevice, streams[0]);
-            cudaMemsetAsync(x_dev, 0, sizeof(FloatingType) * _num_cols, streams[0]); // x = 0
-            cudaMemcpyAsync(r_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, streams[0]); // r = b
-            cudaMemcpyAsync(p_dev[0], b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, streams[0]); // p = b
+            cudaMemcpyAsync(b_dev, _rhs, sizeof(FloatingType) * _num_cols, cudaMemcpyHostToDevice, stream);
+            cudaMemsetAsync(x_dev, 0, sizeof(FloatingType) * _num_cols, stream); // x = 0
+            cudaMemcpyAsync(r_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, stream); // r = b
+            cudaMemcpyAsync(p_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, stream); // p = b
 
-            dot<FloatingType>(b_dev, b_dev, bb_dev, _num_cols, streams[0]); // bb = b * b
-            cudaMemcpyAsync(rr_dev, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, streams[0]); // rr = bb
+            dot<FloatingType>(b_dev, b_dev, bb_dev, _num_cols, stream); // bb = b * b
+            
+            //print bb_dev
+            cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
+
+            cudaMemcpyAsync(rr_dev, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, stream); // rr = bb
         }
 
-        /*
-        *  ---------------------------------------------------------------
-        *  -----------------  NCCL initialization  -----------------------
-        *  ---------------------------------------------------------------
-        */
-        int tot_num_devices = _numDevices * num_procs;
-        
-        // id is used to identify a NCCL communication group
-        ncclUniqueId id;
-        
-        /*
-         * Each ncclComm_t is associated with a specific GPU device because NCCL
-         * is designed to perform collective communication operations among a group 
-         * of GPUs. Each GPU in the group needs to have its own unique communicator 
-         * to manage its part of the collective operation.
-        */
-        ncclComm_t comms[_numDevices];
-        
-        // Generating NCCL unique ID at one process and broadcasting it to all
-        if (rank == 0) ncclGetUniqueId(&id);
-        MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD);
-        //  Initializing NCCL
-        ncclGroupStart();
-        for (int i=0; i<_numDevices; i++) {
-            cudaSetDevice(i);
-            int device_rank = rank * _numDevices + i;
-
-            // ncclCommInitRank is used to create a new communicator for each device
-            // it takes the communicator, the number of devices in the NCCL group,
-            // the unique ID of the NCCL communication group, the rank of
-            // the devices in the NCCL group
-            ncclCommInitRank(&comms[i], tot_num_devices, id, device_rank);
-        }
-        ncclGroupEnd();
 
         /*
         *  ---------------------------------------------------------------
@@ -324,80 +311,36 @@ namespace LAM
         // CG Iterations
         for(num_iters = 1; num_iters <= max_iters; num_iters++)
         {
-
-            // Copy p from device 0 to all other devices to allow matrix-vector multiplication
-            ncclGroupStart();
-            for (int i=0; i < _numDevices; i++) {
-                ncclBroadcast(p_dev[0], p_dev[i], _num_cols, nccl_datatype, 0, comms[i], streams[i]);
-            }
-            ncclGroupEnd();
+            // MPI broadcast of p_dev to all other ranks
+            MPI_Bcast(p_dev, _num_cols, get_mpi_datatype(), 0, MPI_COMM_WORLD);
 
             // Performs matrix-vector multiplication in each device of each rank
-            #pragma omp parallel for num_threads(_numDevices)
-            for(int i = 0; i < _numDevices; i++){
-                cudaSetDevice(i);
-                gemv_host<FloatingType>(1.0, _A_dev[i], p_dev[i], 0.0, Ap_dev[i], _rows_per_device[i], _num_cols, streams[i]);
-            }
+            gemv_host<FloatingType>(1.0, _A_dev, p_dev, 0.0, Ap_dev, _num_local_rows, _num_cols, stream);
 
-            // All-To-One Gather to collect all the results of the mat-vec multiplication in device 0 in rank 0
-            ncclGroupStart();
-            if(rank == 0) {
-                int offset = 0;
-                // for each device, the rank 0 collects the result of the mat-vec multiplication with a recv
-                for(int i = 0; i < _numDevices * num_procs; i++){
-                    if(i < _numDevices * (num_procs - 1)) {
-                        // devices of rank 0 to num_procs - 2 have the same number of rows and so the same distribution among devices
-                        ncclRecv(Ap0_dev + offset, _rows_per_device[i % _numDevices], nccl_datatype, i, comms[0], streams[0]);
-                        offset += _rows_per_device[i % _numDevices];
-                    } else {
-                        // the last rank can have a different number of rows
-                        unsigned int numRowsLastRank = _num_cols / num_procs + _num_cols % num_procs;
-                        unsigned int numRowsDeviceLastRank = numRowsLastRank / _numDevices;
-                        if (i == _numDevices * num_procs - 1){
-                            // the last device of the last rank has the remaining rows
-                            numRowsDeviceLastRank += numRowsLastRank % _numDevices;
-                        }
-                        ncclRecv(Ap0_dev + offset, numRowsDeviceLastRank, nccl_datatype, i, comms[0], streams[0]);
-                        offset += numRowsDeviceLastRank;
-                    }
-                }
-            }
-            for(int i = 0; i < _numDevices; i++) {
-                ncclSend(Ap_dev[i], _rows_per_device[i] , nccl_datatype, 0, comms[i], streams[i]);
-            }
-            ncclGroupEnd();
+            cudaDeviceSynchronize();
 
-            // Synchronizing on CUDA stream to complete NCCL communication
-            for (int i = 0; i < _numDevices; i++) {
-                cudaStreamSynchronize(streams[i]);
-            }
+            MPI_Gatherv(Ap_dev, _num_local_rows, get_mpi_datatype(), Ap0_dev, _sendcounts, _displs, get_mpi_datatype(), 0, MPI_COMM_WORLD);
+
 
             // Device 0 in rank 0 carries on all the other operation involved in the iteration of the CG method
             if(rank == 0) {
-                cudaSetDevice(0);
 
-                dot<FloatingType>(p_dev[0], Ap0_dev, pAp_dev, _num_cols, streams[0]);
+                dot<FloatingType>(p_dev, Ap0_dev, pAp_dev, _num_cols, stream);
 
-                divide<FloatingType><<<1, 1, 0, streams[0]>>>(rr_dev, pAp_dev, alpha_dev);
+                divide<FloatingType><<<1, 1, 0, stream>>>(rr_dev, pAp_dev, alpha_dev);
 
-                axpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>
-                        (alpha_dev, p_dev[0], x_dev, _num_cols);
+                axpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>
+                        (alpha_dev, p_dev, x_dev, _num_cols);
 
-                minusaxpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>
+                minusaxpy<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>
                         (alpha_dev, Ap0_dev, r_dev, _num_cols);
 
                 
-                dot<FloatingType>(r_dev, r_dev, rr_new_dev, _num_cols, streams[0]);
+                dot<FloatingType>(r_dev, r_dev, rr_new_dev, _num_cols, stream);
 
                
-                divide<FloatingType><<<1, 1, 0, streams[0]>>>(rr_new_dev, rr_dev, beta_dev);
-
+                divide<FloatingType><<<1, 1, 0, stream>>>(rr_new_dev, rr_dev, beta_dev);
                 
-                //cudaMemcpyAsync(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, streams[0]);
-
-                //cudaMemcpyAsync(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
-                //cudaMemcpyAsync(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
-
                 cudaMemcpy(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
                 cudaMemcpy(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
                 cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
@@ -406,6 +349,7 @@ namespace LAM
                 cudaDeviceSynchronize();
 
                 if (std::sqrt(*rr / *bb) < rel_error) { stop = true; }
+
             }
 
             // Rank 0 broadcasts the flag stop to all other rank in order to stop the computation when the solution is found
@@ -414,11 +358,9 @@ namespace LAM
                 break;
             }
 
-
             // Device 0 in rank 0 computes the new value of p that will be broadcast to all other devices in the next iteration
             if (rank == 0){
-                cudaSetDevice(0);
-                xpby<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, streams[0]>>>(r_dev, beta_dev, p_dev[0], _num_cols);
+                xpby<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>(r_dev, beta_dev, p_dev, _num_cols);
             }
         }
 
@@ -430,71 +372,77 @@ namespace LAM
 
         // Device 0 of rank 0 prints the information about the result of the CG method
         if(rank == 0) {
-            //cudaSetDevice(0);
-            //cudaMemcpy(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
-            //cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
 
             // Prints the number of iterations and the relative error
             if (num_iters <= max_iters) {
-                printf("PARALLEL MULTI-GPUS CUDA NCCL: Converged in %d iterations, relative error is %e\n", num_iters,
+                printf("PARALLEL MULTI-GPUS CUDA MPI: Converged in %d iterations, relative error is %e\n", num_iters,
                        std::sqrt(*rr / *bb));
             } else {
-                printf("PARALLEL MULTI-GPUS CUDA NCCL: Did not converge in %d iterations, relative error is %e\n", max_iters,
+                printf("PARALLEL MULTI-GPUS CUDA MPI: Did not converge in %d iterations, relative error is %e\n", max_iters,
                        std::sqrt(*rr / *bb));
             }
 
             // Copy solution to host
-            cudaSetDevice(0);
-            cudaMemcpyAsync(_x, x_dev, _num_cols * sizeof(FloatingType), cudaMemcpyDeviceToHost, streams[0]);
+            cudaMemcpyAsync(_x, x_dev, _num_cols * sizeof(FloatingType), cudaMemcpyDeviceToHost, stream);
 
             // Free GPU memory
-            cudaFreeAsync(alpha_dev, streams[0]);
-            cudaFreeAsync(beta_dev, streams[0]);
-            cudaFreeAsync(bb_dev, streams[0]);
-            cudaFreeAsync(rr_dev, streams[0]);
-            cudaFreeAsync(rr_new_dev, streams[0]);
-            cudaFreeAsync(r_dev, streams[0]);
-            cudaFreeAsync(p_dev, streams[0]);
-            cudaFreeAsync(Ap0_dev, streams[0]);
-            cudaFreeAsync(pAp_dev, streams[0]);
-
-            // Free CPU memory
-            delete bb;
-            delete rr;
+            cudaFreeAsync(alpha_dev, stream);
+            cudaFreeAsync(beta_dev, stream);
+            cudaFreeAsync(bb_dev, stream);
+            cudaFreeAsync(rr_dev, stream);
+            cudaFreeAsync(rr_new_dev, stream);
+            cudaFreeAsync(r_dev, stream);
+            cudaFreeAsync(p_dev, stream);
+            cudaFreeAsync(Ap0_dev, stream);
+            cudaFreeAsync(pAp_dev, stream);
         }
 
-        // All devices free their allocated memory and destroy streams
-        #pragma omp parallel for num_threads(_numDevices)
-        for(int i = 0; i < _numDevices; i++){
-            cudaSetDevice(i);
-            cudaFreeAsync(Ap_dev[i], streams[i]);
-            cudaFreeAsync(p_dev[i], streams[i]);
-        }
+        // Free CPU memory
+        delete bb;
+        delete rr;
 
-        // Finalizing NCCL
-        for (int i = 0; i < _numDevices; i++) {
-            ncclCommDestroy(comms[i]);
-        }
+        cudaFreeAsync(Ap_dev, stream);
+        cudaFreeAsync(p_dev, stream);
 
         return (num_iters <= max_iters);
     }
 
     template<typename FloatingType>
-    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::load_matrix_from_file(const char * filename)
-    {
-        int rank, num_procs;
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::load_matrix_from_file(const char * filename){
+        int rank, num_procs, localRank = 0;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+        /*
+        * ---------------------------------------------------------------
+        * -----------------  Retrieve the device id  -------------------
+        * --------------------------------------------------------------
+        */
+
+        uint64_t hostHashs[num_procs];
+        char hostname[1024];
+        getHostName(hostname, 1024);
+        hostHashs[rank] = getHostHash(hostname);
+        MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
+        for (int p=0; p<num_procs; p++) {
+            if (p == rank) break;
+            if (hostHashs[p] == hostHashs[rank]) localRank++;
+        }
+
+        // from now on I am going to work only with the device localRank
+        _device_id = localRank;
+        cudaSetDevice(_device_id);
+
+        // create a stream for the device
+        cudaStreamCreate(&stream);
 
         MPI_File fhandle;
         size_t num_total_rows;
         size_t file_offset;
-        size_t numRowsPerDevice;
+        //size_t numRowsPerDevice;
         
-
-        // at the index i, it contains a portion of the matrix that will be transfered to the i-th device
         // it is just a temporary variable to store the portion of the matrix that will be transfered
-        FloatingType** h_A;
+        FloatingType* h_A;
 
         // Initialize an MPI file handler and open the file
         if(MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &fhandle) != MPI_SUCCESS) {
@@ -511,7 +459,6 @@ namespace LAM
         // Evaluate the number of rows associated to each rank and the offset in file
         _num_local_rows = num_total_rows / num_procs;
         file_offset = _num_local_rows * sizeof(FloatingType) * rank * _num_cols;
-        _offset = _num_local_rows * rank;
 
         //the last rank will have the remaining rows
         if(rank == num_procs - 1){
@@ -519,41 +466,28 @@ namespace LAM
             _num_local_rows += num_total_rows % num_procs; 
         }
 
+        _sendcounts = new int[num_procs]; 
+        _displs = new int[num_procs];
+
+        for(int i=0; i<num_procs; i++){
+            _sendcounts[i] = num_total_rows/num_procs;
+            _sendcounts[i] += (i==num_procs-1) ? num_total_rows%num_procs : 0;
+            _displs[i] = i * (num_total_rows/num_procs);
+        }
+
         // File pointer is set to the current pointer position plus offset in order to read the right portion of the matrix
         MPI_File_seek(fhandle, file_offset, MPI_SEEK_CUR);
+        
+        size_t DATA = _num_cols * _num_local_rows * sizeof(FloatingType);
+        PRINT_RANK0("I am trying to allocate %lu bytes (%f GB)\n", DATA, DATA / (1024.0 * 1024.0 * 1024.0));
 
-        // Allocates page-locked memory on the host for asynchronous memory copy
-        cudaHostAlloc(&_rows_per_device, sizeof(size_t) * _numDevices, cudaHostAllocDefault);
+        cudaMalloc(&_A_dev, sizeof(FloatingType) * _num_cols * _num_local_rows);
 
-
-        // Evaluate the number of rows associated to each device in the rank
-        numRowsPerDevice = _num_local_rows / _numDevices;
-        size_t s = 0;
-        for(int i = 0; i < _numDevices; i++){
-            // The last device will have the remaining rows
-            _rows_per_device[i] = (s + numRowsPerDevice <= _num_local_rows) ? numRowsPerDevice : _num_local_rows - s;
-            s += numRowsPerDevice;
-        }
-        if(s < _num_local_rows) _rows_per_device[_numDevices - 1] += _num_local_rows - s;
-
-        // Allocate the space in each device for its chunk of the matrix
-        #pragma omp parallel for num_threads(_numDevices)
-        for(int i = 0; i < _numDevices; i++){
-            cudaSetDevice(i);
-            cudaMalloc(&_A_dev[i], sizeof(FloatingType) * _num_cols * _rows_per_device[i]);
-        }
-
-        // Read matrix from file and copy it into the devices
-        cudaHostAlloc(&h_A, sizeof(FloatingType *) * _numDevices, cudaHostAllocDefault);
-        /* for each device, allocate the space in the host and read the portion of the matrix from the file
-           then copy it into the device*/ 
-        for(int k = 0; k < _numDevices; k++) {
-            cudaHostAlloc(&h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaHostAllocDefault);
-            MPI_File_read(fhandle, &h_A[k][0], _num_cols*_rows_per_device[k], get_mpi_datatype(), MPI_STATUS_IGNORE);
-            cudaSetDevice(k);
-            // I'm pretty sure that these copies are done in serial, so it is not efficient 
-            cudaMemcpyAsync(_A_dev[k], h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaMemcpyHostToDevice, streams[k]);
-        }
+        // allocate the space in the host (using pinned memory) and read the portion of the matrix from the file
+        cudaHostAlloc(&h_A, sizeof(FloatingType) * _num_cols * _num_local_rows, cudaHostAllocDefault);
+        MPI_File_read(fhandle, &h_A[0], _num_cols * _num_local_rows, get_mpi_datatype(), MPI_STATUS_IGNORE);
+        // copy the portion of the matrix into the device
+        cudaMemcpyAsync(_A_dev, h_A, sizeof(FloatingType) * _num_cols * _num_local_rows, cudaMemcpyHostToDevice, stream);
 
         // Close the file
         if(MPI_File_close(&fhandle) != MPI_SUCCESS) {
@@ -561,20 +495,13 @@ namespace LAM
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
             return false;
         }
-        //printf("[MPI process %d] File closed successfully.\n", rank);
-
-        for(int i = 0; i < _numDevices; i++){
-            cudaSetDevice(i);
-            cudaFreeHost(h_A[i]);
-        }
 
         cudaFreeHost(h_A);
         return true;
     }
 
     template<typename FloatingType>
-    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::load_rhs_from_file(const char * filename)
-    {
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::load_rhs_from_file(const char * filename){
         int rank, num_procs;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
@@ -614,7 +541,7 @@ namespace LAM
     }
 
     template<typename FloatingType>
-    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::save_result_to_file(const char * filename) const
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::save_result_to_file(const char * filename) const
     {
         int rank, num_procs;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -640,8 +567,7 @@ namespace LAM
         return true;
     }
 
-
-template class LAM::ConjugateGradient_MultiGPUS_CUDA_NCCL<float>;
-template class LAM::ConjugateGradient_MultiGPUS_CUDA_NCCL<double>;
+template class LAM::ConjugateGradient_MultiGPUS_CUDA_MPI<float>;
+template class LAM::ConjugateGradient_MultiGPUS_CUDA_MPI<double>;
 
 }
