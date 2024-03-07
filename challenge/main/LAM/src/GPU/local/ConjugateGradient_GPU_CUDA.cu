@@ -5,7 +5,8 @@ namespace LAM
 {
 
     constexpr int WARP_SIZE = 32;
-
+    constexpr int NUM_BLOCKS=1000;
+    constexpr int NUM_THREADS=1024;
         /**
      * ---------------------------------------------------------------
      * -----------------  CUDA Kernels  ------------------------------
