@@ -11,49 +11,30 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <omp.h>
+#include <chrono>
 #include "../../ConjugateGradient.hpp"
 
-#define PRINT_RANK0(...) if(rank==0) printf(__VA_ARGS__)
-#define PRINT_ERR_RANK0(...) if(rank==0) fprintf(stderr, __VA_ARGS__)
 
 
 namespace LAM
 {
-
-    //constexpr int NUM_BLOCKS=1;
-    //constexpr int NUM_THREADS=32;
 
     template<typename FloatingType>
     class ConjugateGradient_MultiGPUS_CUDA_MPI:
     public ConjugateGradient<FloatingType>
     {
         public:
-            //using ConjugateGradient<FloatingType>::ConjugateGradient;
+            using ConjugateGradient<FloatingType>::ConjugateGradient;
             //define a constructor
-            ConjugateGradient_MultiGPUS_CUDA_MPI()
-            {
-                // Initialize CUBLAS
-                /*cublas_handler = new cublasHandle_t[_numDevices];
-                cublasStatus_t cudaStatus;
-                for(int i = 0; i < _numDevices; i++){
-                    cudaSetDevice(i);
-                    cudaStatus = cublasCreate(&cublas_handler[i]);
-                    if (cudaStatus != CUBLAS_STATUS_SUCCESS) {
-                        printf("cublasCreate failed\n");
-                        fflush(stdout);
-                    }else{
-                        printf("cublasCreate success\n");
-                        fflush(stdout);
-                    }
-                }*/
-
-            }
 
             bool virtual solve(int max_iters, FloatingType rel_error);
             
             bool virtual load_matrix_from_file(const char* filename);
             bool virtual load_rhs_from_file(const char* filename);
             bool virtual save_result_to_file(const char * filename) const;
+
+            bool virtual generate_matrix(const size_t rows, const size_t cols);
+            bool virtual generate_rhs();
             
             size_t get_num_rows() const { return _num_local_rows; }
             size_t get_num_cols() const { return _num_cols; }
@@ -102,8 +83,6 @@ namespace LAM
                     return MPI_FLOAT;
                 }
             }
-
-            //static constexpr ncclDataType_t nccl_datatype = std::is_same<FloatingType, double>::value ? ncclDouble : ncclFloat;
 
     };
     

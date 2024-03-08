@@ -1,0 +1,2 @@
+n_rows, mpi_procs, number_of_threads, generate_the_matrix (sec), avg time for one iteration (sec)
+2000000,64,128,13.326000, 4.479601

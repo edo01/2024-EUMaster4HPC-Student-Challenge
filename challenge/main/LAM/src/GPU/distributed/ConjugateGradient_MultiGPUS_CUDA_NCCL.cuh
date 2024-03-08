@@ -65,6 +65,9 @@ namespace LAM
             bool virtual load_matrix_from_file(const char* filename);
             bool virtual load_rhs_from_file(const char* filename);
             bool virtual save_result_to_file(const char * filename) const;
+
+            bool virtual generate_matrix(size_t num_rows, size_t num_cols);
+            bool virtual generate_rhs();
             
             size_t get_num_rows() const { return _num_local_rows; }
             size_t get_num_cols() const { return _num_cols; }

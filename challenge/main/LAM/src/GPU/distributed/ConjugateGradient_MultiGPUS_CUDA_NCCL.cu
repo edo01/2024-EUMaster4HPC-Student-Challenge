@@ -414,7 +414,6 @@ namespace LAM
                 break;
             }
 
-
             // Device 0 in rank 0 computes the new value of p that will be broadcast to all other devices in the next iteration
             if (rank == 0){
                 cudaSetDevice(0);
@@ -535,6 +534,8 @@ namespace LAM
             s += numRowsPerDevice;
         }
         if(s < _num_local_rows) _rows_per_device[_numDevices - 1] += _num_local_rows - s;
+        
+        cudaHostAlloc(_A_dev, sizeof(FloatingType *) * _numDevices, cudaHostAllocDefault);
 
         // Allocate the space in each device for its chunk of the matrix
         #pragma omp parallel for num_threads(_numDevices)
@@ -551,7 +552,6 @@ namespace LAM
             cudaHostAlloc(&h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaHostAllocDefault);
             MPI_File_read(fhandle, &h_A[k][0], _num_cols*_rows_per_device[k], get_mpi_datatype(), MPI_STATUS_IGNORE);
             cudaSetDevice(k);
-            // I'm pretty sure that these copies are done in serial, so it is not efficient 
             cudaMemcpyAsync(_A_dev[k], h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaMemcpyHostToDevice, streams[k]);
         }
 
@@ -609,6 +609,112 @@ namespace LAM
         fread(_rhs, sizeof(FloatingType), rhs_rows, file);
 
         fclose(file);
+
+        return true;
+    }
+
+    template<typename FloatingType>
+    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::generate_matrix(size_t num_rows, size_t num_cols)
+    {
+        int rank, num_procs;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+        size_t num_total_rows;
+        //size_t file_offset;
+        size_t numRowsPerDevice;
+
+        // at the index i, it contains a portion of the matrix that will be transfered to the i-th device
+        // it is just a temporary variable to store the portion of the matrix that will be transfered
+        FloatingType** h_A;
+
+        num_total_rows = num_rows;
+        _num_cols = num_rows;
+
+        // Evaluate the number of rows associated to each rank and the offset in file
+        _num_local_rows = num_total_rows / num_procs;
+        _offset = _num_local_rows * rank;
+
+        //the last rank will have the remaining rows
+        if(rank == num_procs - 1){
+            //add the reminder to the last rank
+            _num_local_rows += num_total_rows % num_procs; 
+        }
+
+        // Allocates page-locked memory on the host for asynchronous memory copy
+        cudaHostAlloc(&_rows_per_device, sizeof(size_t) * _numDevices, cudaHostAllocDefault);
+
+
+        // Evaluate the number of rows associated to each device in the rank
+        numRowsPerDevice = _num_local_rows / _numDevices;
+        size_t s = 0;
+        for(int i = 0; i < _numDevices; i++){
+            // The last device will have the remaining rows
+            _rows_per_device[i] = (s + numRowsPerDevice <= _num_local_rows) ? numRowsPerDevice : _num_local_rows - s;
+            s += numRowsPerDevice;
+        }
+        if(s < _num_local_rows) _rows_per_device[_numDevices - 1] += _num_local_rows - s;
+
+        cudaHostAlloc(_A_dev, sizeof(FloatingType *) * _numDevices, cudaHostAllocDefault);
+        // Allocate the space in each device for its chunk of the matrix
+        //#pragma omp parallel for num_threads(_numDevices)
+        for(int i = 0; i < _numDevices; i++){
+            cudaSetDevice(i);
+            cudaMalloc(&_A_dev[i], sizeof(FloatingType) * _num_cols * _rows_per_device[i]);
+        }
+        // Read matrix from file and copy it into the devices
+        cudaHostAlloc(&h_A, sizeof(FloatingType *) * _numDevices, cudaHostAllocDefault);
+        /* for each device, allocate the space in the host and read the portion of the matrix from the file
+           then copy it into the device*/ 
+        for(int k = 0; k < _numDevices; k++) {
+            cudaHostAlloc(&h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaHostAllocDefault);
+            //MPI_File_read(fhandle, &h_A[k][0], _num_cols*_rows_per_device[k], get_mpi_datatype(), MPI_STATUS_IGNORE);
+            for (size_t i = 0; i < _rows_per_device[k]; i++) {
+                for (size_t j = 0; j < _num_cols; j++) {
+                    if((i+_offset+numRowsPerDevice*k)==j-1 || (i+_offset+numRowsPerDevice*k)==j+1) 
+                        h_A[k][i * _num_cols + j] = 1;
+                    else if((i+_offset+numRowsPerDevice*k)==j)
+                        h_A[k][i * _num_cols + j] = 2;
+                    else
+                        h_A[k][i * _num_cols + j] = 0;
+                }
+            }
+            
+            cudaSetDevice(k);
+            // I'm pretty sure that these copies are done in serial, so it is not efficient 
+            cudaMemcpyAsync(_A_dev[k], h_A[k], sizeof(FloatingType) * _num_cols * _rows_per_device[k], cudaMemcpyHostToDevice, streams[k]);
+        }
+
+        //printf("[MPI process %d] File closed successfully.\n", rank);
+
+        for(int i = 0; i < _numDevices; i++){
+            cudaSetDevice(i);
+            cudaFreeHost(h_A[i]);
+        }
+
+        cudaFreeHost(h_A);
+        return true;
+    }
+
+    template<typename FloatingType>
+    bool ConjugateGradient_MultiGPUS_CUDA_NCCL<FloatingType>::generate_rhs()
+    {
+        int rank, num_procs;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+        if(rank!=0) return true;  // Only rank 0 reads the right-hand side vector from the matrix
+
+    
+        size_t rhs_rows = _num_cols;
+
+        cudaHostAlloc(&_rhs, sizeof(FloatingType) * rhs_rows, cudaHostAllocDefault);
+        cudaHostAlloc(&_x, sizeof(FloatingType) * rhs_rows, cudaHostAllocDefault);
+        
+
+        for(size_t i = 0; i < rhs_rows; i++){
+            _rhs[i] = 1;
+        }
 
         return true;
     }

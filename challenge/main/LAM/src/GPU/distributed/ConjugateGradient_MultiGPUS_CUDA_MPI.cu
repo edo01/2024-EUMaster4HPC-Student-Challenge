@@ -307,10 +307,16 @@ namespace LAM
         *  -----------------  CG Algorithm  ------------------------------
         *  ---------------------------------------------------------------
         */ 
+        // calc the average time of each iteration
+        std::chrono::duration<double> avg_time_gemv(0);
+        std::chrono::duration<double> avg_time_cg(0);
 
         // CG Iterations
         for(num_iters = 1; num_iters <= max_iters; num_iters++)
         {
+            auto cg_start = std::chrono::high_resolution_clock::now();
+
+            auto gemv_start = std::chrono::high_resolution_clock::now();
             // MPI broadcast of p_dev to all other ranks
             MPI_Bcast(p_dev, _num_cols, get_mpi_datatype(), 0, MPI_COMM_WORLD);
 
@@ -320,7 +326,9 @@ namespace LAM
             cudaDeviceSynchronize();
 
             MPI_Gatherv(Ap_dev, _num_local_rows, get_mpi_datatype(), Ap0_dev, _sendcounts, _displs, get_mpi_datatype(), 0, MPI_COMM_WORLD);
-
+            
+            auto gemv_end = std::chrono::high_resolution_clock::now();
+            avg_time_gemv += gemv_end - gemv_start;
 
             // Device 0 in rank 0 carries on all the other operation involved in the iteration of the CG method
             if(rank == 0) {
@@ -362,6 +370,17 @@ namespace LAM
             if (rank == 0){
                 xpby<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>(r_dev, beta_dev, p_dev, _num_cols);
             }
+
+            auto cg_end = std::chrono::high_resolution_clock::now();
+            avg_time_cg += cg_end - cg_start;
+        }
+
+        //print the average time of each iteration
+        //PRINT_RANK0("gemv:%f,", avg_time_gemv.count() / num_iters);
+        //PRINT_RANK0("cg:%f,", avg_time_cg.count() / num_iters);
+        if(rank == 0) {
+            std::cout << avg_time_gemv.count() / num_iters << ",";
+            std::cout << avg_time_cg.count() / num_iters << ",";
         }
 
         /*
@@ -374,12 +393,17 @@ namespace LAM
         if(rank == 0) {
 
             // Prints the number of iterations and the relative error
-            if (num_iters <= max_iters) {
+            /*if (num_iters <= max_iters) {
                 printf("PARALLEL MULTI-GPUS CUDA MPI: Converged in %d iterations, relative error is %e\n", num_iters,
                        std::sqrt(*rr / *bb));
             } else {
                 printf("PARALLEL MULTI-GPUS CUDA MPI: Did not converge in %d iterations, relative error is %e\n", max_iters,
                        std::sqrt(*rr / *bb));
+            }*/
+
+            if(rank == 0) {
+                std::cout << num_iters << ",";
+                std::cout << std::sqrt(*rr / *bb) << ",";
             }
 
             // Copy solution to host
@@ -456,6 +480,10 @@ namespace LAM
         MPI_File_read(fhandle, &num_total_rows, 1, MPI_UNSIGNED_LONG, MPI_STATUS_IGNORE);
         MPI_File_read(fhandle, &_num_cols, 1, MPI_UNSIGNED_LONG, MPI_STATUS_IGNORE);
 
+        if(rank==0){
+            std::cout << num_total_rows << ",";
+        }
+
         // Evaluate the number of rows associated to each rank and the offset in file
         _num_local_rows = num_total_rows / num_procs;
         file_offset = _num_local_rows * sizeof(FloatingType) * rank * _num_cols;
@@ -478,8 +506,8 @@ namespace LAM
         // File pointer is set to the current pointer position plus offset in order to read the right portion of the matrix
         MPI_File_seek(fhandle, file_offset, MPI_SEEK_CUR);
         
-        size_t DATA = _num_cols * _num_local_rows * sizeof(FloatingType);
-        PRINT_RANK0("I am trying to allocate %lu bytes (%f GB)\n", DATA, DATA / (1024.0 * 1024.0 * 1024.0));
+        //size_t DATA = _num_cols * _num_local_rows * sizeof(FloatingType);
+        //PRINT_RANK0("I am trying to allocate %lu bytes (%f GB)\n", DATA, DATA / (1024.0 * 1024.0 * 1024.0));
 
         cudaMalloc(&_A_dev, sizeof(FloatingType) * _num_cols * _num_local_rows);
 
@@ -536,6 +564,117 @@ namespace LAM
         fread(_rhs, sizeof(FloatingType), rhs_rows, file);
 
         fclose(file);
+
+        return true;
+    }
+
+    template<typename FloatingType>
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::generate_matrix(const size_t num_rows, const size_t num_cols){
+        int rank, num_procs, localRank = 0;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+        /*
+        * ---------------------------------------------------------------
+        * -----------------  Retrieve the device id  -------------------
+        * --------------------------------------------------------------
+        */
+
+        uint64_t hostHashs[num_procs];
+        char hostname[1024];
+        getHostName(hostname, 1024);
+        hostHashs[rank] = getHostHash(hostname);
+        MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
+        for (int p=0; p<num_procs; p++) {
+            if (p == rank) break;
+            if (hostHashs[p] == hostHashs[rank]) localRank++;
+        }
+
+        // from now on I am going to work only with the device localRank
+        _device_id = localRank;
+        cudaSetDevice(_device_id);
+
+        // create a stream for the device
+        cudaStreamCreate(&stream);
+
+        size_t num_total_rows = num_rows;
+        _num_cols = num_rows;
+        size_t offset;
+        //size_t numRowsPerDevice;
+
+        //PRINT_RANK0("%lu,", num_total_rows);
+        if(rank==0){
+            std::cout << num_total_rows << ",";
+        }
+
+        // it is just a temporary variable to store the portion of the matrix that will be transfered
+        FloatingType* h_A;
+
+        // Evaluate the number of rows associated to each rank and the offset in file
+        _num_local_rows = num_total_rows / num_procs;
+        offset = _num_local_rows * rank;    
+
+        //the last rank will have the remaining rows
+        if(rank == num_procs - 1){
+            //add the reminder to the last rank
+            _num_local_rows += num_total_rows % num_procs; 
+        }
+
+        _sendcounts = new int[num_procs]; 
+        _displs = new int[num_procs];
+
+        for(int i=0; i<num_procs; i++){
+            _sendcounts[i] = num_total_rows/num_procs;
+            _sendcounts[i] += (i==num_procs-1) ? num_total_rows%num_procs : 0;
+            _displs[i] = i * (num_total_rows/num_procs);
+        }
+        
+        //long unsigned int DATA_SIZE = _num_local_rows * _num_cols * sizeof(FloatingType);
+        //PRINT_RANK0("Problem size: %lu bytes (%f GB)\n", DATA_SIZE, DATA_SIZE/(1024.0*1024.0*1024.0));
+        //DATA_SIZE += _num_cols*5*sizeof(FloatingType);
+        //PRINT_RANK0("I am trying to allocate %lu bytes (%f GB)\n", DATA_SIZE, DATA_SIZE/(1024.0*1024.0*1024.0));
+        fflush(stdout);
+
+        cudaMalloc(&_A_dev, sizeof(FloatingType) * _num_cols * _num_local_rows);
+
+        // allocate the space in the host (using pinned memory) and read the portion of the matrix from the file
+        cudaHostAlloc(&h_A, sizeof(FloatingType) * _num_cols * _num_local_rows, cudaHostAllocDefault);
+        
+        for (size_t i = 0; i < _num_local_rows; i++) {
+            for (size_t j = 0; j < _num_cols; j++) {
+                if(i+offset==j-1 || i+offset==j+1) 
+                    h_A[i * _num_cols + j] = 1;
+                else if(i+offset==j)
+                    h_A[i * _num_cols + j] = 2;
+                else
+                    h_A[i * _num_cols + j] = 0;
+            }
+        }
+        
+        // copy the portion of the matrix into the device
+        cudaMemcpyAsync(_A_dev, h_A, sizeof(FloatingType) * _num_cols * _num_local_rows, cudaMemcpyHostToDevice, stream);
+
+        cudaFreeHost(h_A);
+        return true;
+    }
+
+    template<typename FloatingType>
+    bool ConjugateGradient_MultiGPUS_CUDA_MPI<FloatingType>::generate_rhs(){
+        int rank, num_procs;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+        size_t rhs_rows;
+
+        rhs_rows = _num_cols;
+
+        cudaHostAlloc(&_rhs, sizeof(FloatingType) * rhs_rows, cudaHostAllocDefault);
+        cudaHostAlloc(&_x, sizeof(FloatingType) * rhs_rows, cudaHostAllocDefault);
+        
+        for (int i = 0; i < rhs_rows; i++)
+        {
+            _rhs[i] = 1.0;
+        }
 
         return true;
     }
