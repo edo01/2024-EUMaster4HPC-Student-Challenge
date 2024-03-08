@@ -97,14 +97,14 @@ namespace LAM
         FloatingType * partialSum;
         cudaMalloc(&partialSum, sizeof(FloatingType) * NUM_BLOCKS);
         partialDot<FloatingType><<<NUM_BLOCKS,NUM_THREADS, 0, stream>>>(a, b, partialSum, size);
-        int s = gridSize;
+        int s = NUM_BLOCKS;
         while( s > 1 ){
-            if( s < blockSize ){
-                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, res, s);
+            if( s < NUM_THREADS ){
+                reduce<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>(partialSum, res, s);
             } else {
-                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, partialSum, s);
+                reduce<FloatingType><<<NUM_BLOCKS, NUM_THREADS, 0, stream>>>(partialSum, partialSum, s);
             }
-            s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+            s = (s % NUM_THREADS == 0 && s != 2) ? s/NUM_THREADS : s/NUM_THREADS + 1;
         }
         cudaFree(partialSum);
     }
