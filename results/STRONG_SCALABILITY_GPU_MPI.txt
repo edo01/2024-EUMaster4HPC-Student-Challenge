@@ -1,4 +1,16 @@
-#size, mpi_proc, omp_threads, read_matrix/matrix_gen (sec), gem_v average (s), cg_single_iter_avg (sec), num iterations, error, entire_cg_algorithm (sec)
+# The first column is the size of the matrix
+# The second column is the number of MPI processes / devices
+# The third column is the number of OpenMP threads
+# The fourth column is the time to read the matrix or generate the matrix in seconds
+# The fifth column is the average time to perform the GEMV operation in seconds
+# The sixth column is the average time to perform a single iteration of the CG algorithm in seconds
+# The seventh column is the number of iterations of the CG algorithm
+# The eighth column is the error of the CG algorithm
+# The ninth column is the time to perform the entire CG algorithm in seconds
+
+# The following output is from the strong scalability test
+# The test tries to assess the performance of the code as the number of MPI processes increases
+# mantaining the size of the matrix constant
 
 strong scalability test 20000
 20000,1,1,3.816,0.00239754,0.0024846,359,9.93128e-10,0.901
@@ -10,8 +22,6 @@ strong scalability test 20000
 20000,12,1,1.188,0.000602788,0.000720643,359,9.93128e-10,0.271
 20000,16,1,1.266,0.00054452,0.000665436,359,9.93128e-10,0.252
 
-
-
 strong scalability test 40000
 40000,1,1,17.896,0.00922376,0.00929002,360,9.43879e-10,3.437
 40000,2,1,12.32,0.00470865,0.00479294,360,9.43879e-10,2.224
@@ -21,8 +31,6 @@ strong scalability test 40000
 40000,8,1,4.991,0.00164704,0.00175658,360,9.43879e-10,0.646
 40000,12,1,2.856,0.00136444,0.00147235,360,9.43879e-10,0.541
 40000,16,1,2.528,0.00108469,0.0011982,360,9.43879e-10,0.446
-
-
 
 strong scalability test 50000
 50000,1,1,8.404,0.014387,0.0145158,10001,-nan,145.387 # Not converged

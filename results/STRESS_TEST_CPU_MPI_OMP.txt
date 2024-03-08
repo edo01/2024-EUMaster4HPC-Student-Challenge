@@ -1,0 +1,17 @@
+# output
+# the first column is the number of rows in the matrix
+# the second column is the number of MPI processes
+# the third column is the number of threads
+# the fourth column is the time to generate the matrix
+# the fifth column is the average time for one iteration
+
+# This test is trying to analyze the performance of the MPI+OMP solver
+# under a load of massive data. Each node allocates 466 GB of memory to
+# and computes just some iterations of the CG algorithm.
+
+# 64 MPI processes and 128 threads per process
+# SIZE of the matrix: 29,125 TB
+2000000,64,128,13.326000,4.479601
+# 128 MPI processes and 128 threads per process
+# SIZE of the matrix: 116,5 TB
+4000000,256,128,13.110000,4.814646

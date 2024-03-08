@@ -1,0 +1,74 @@
+# The first column is the size of the matrix
+# The second column is the number of MPI processes / devices
+# The third column is the number of OpenMP threads
+# The fourth column is the time to read the matrix or generate the matrix in seconds
+# The fifth column is the average time to perform the GEMV operation in seconds
+# The sixth column is the average time to perform a single iteration of the CG algorithm in seconds
+# The seventh column is the number of iterations of the CG algorithm
+# The eighth column is the error of the CG algorithm
+# The ninth column is the time to perform the entire CG algorithm in seconds
+
+# This test is trying to analyze the performance of the MPI+CUDA solver
+# under a load of massive data. Each device allocates 36 GB of memory 
+# and computes just some iterations of the CG algorithm.
+
+# 64 devices are used to solve a 560000x560000 matrix
+
+560000,64,1,27.332,0.0930251,0.0931695,11,4.72456e-05,1
+560000,64,1,26.666,0.0337474,0.0338859,3001,1.57485e-07,102
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
