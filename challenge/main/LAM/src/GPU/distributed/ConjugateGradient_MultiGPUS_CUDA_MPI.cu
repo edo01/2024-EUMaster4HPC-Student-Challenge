@@ -76,7 +76,6 @@ namespace LAM
 
         // Let the thread 0 write its result to main memory
         if(threadIdx.x == 0){
-            //!!sum non è un array
             sum[blockIdx.x] = tmp[0];
         }
     }
@@ -90,10 +89,10 @@ namespace LAM
         unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
         unsigned int t = threadIdx.x;
         // Load elements and check boundary condition
-        if(tid < size){
-            tmp[t] = a[tid] * b[tid];
-        } else {
-            tmp[t] = 0;
+        tmp[t] = 0;
+        while(tid < size) {
+            tmp[t] += a[tid] * b[tid];
+            tid += blockDim.x * gridDim.x;
         }
         __syncthreads();
         // Reduce tmp
@@ -118,12 +117,17 @@ namespace LAM
     __host__ void dot(const FloatingType* a, const FloatingType* b, FloatingType* res, size_t size, cudaStream_t stream)
     {
         FloatingType * partialSum;
-        //!! I think this should be changed with cudaMallocAsync
         cudaMalloc(&partialSum, sizeof(FloatingType) * NUM_BLOCKS);
         partialDot<FloatingType><<<NUM_BLOCKS,NUM_THREADS, 0, stream>>>(a, b, partialSum, size);
-        //!! qui dovrebbe essere NUM_BLOCKS e non NUM_THREADS perché partialSum è un array di NUM_BLOCKS elementi
-        reduce<FloatingType><<<1,NUM_THREADS, 0, stream>>>(partialSum, res, NUM_BLOCKS); // TODO deal with the case in which only one reduce is not enough
-        
+        int s = gridSize;
+        while( s > 1 ){
+            if( s < blockSize ){
+                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, res, s);
+            } else {
+                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, partialSum, s);
+            }
+            s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+        }
         cudaFree(partialSum);
     }
 

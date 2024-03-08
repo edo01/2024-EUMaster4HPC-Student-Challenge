@@ -57,7 +57,6 @@ namespace LAM
 
         // Let the thread 0 write its result to main memory
         if(threadIdx.x == 0){
-            //!!sum non è un array
             sum[blockIdx.x] = tmp[0];
         }
     }
@@ -100,12 +99,17 @@ namespace LAM
     __host__ void dot(const FloatingType* a, const FloatingType* b, FloatingType* res, size_t size)
     {
         FloatingType * partialSum;
-        //!! I think this should be changed with cudaMallocAsync
         cudaMalloc(&partialSum, sizeof(FloatingType) * NUM_BLOCKS);
         partialDot<FloatingType><<<NUM_BLOCKS,NUM_THREADS>>>(a, b, partialSum, size);
-        //!! qui dovrebbe essere NUM_BLOCKS e non NUM_THREADS perché partialSum è un array di NUM_BLOCKS elementi
-        reduce<FloatingType><<<1,NUM_THREADS>>>(partialSum, res, NUM_BLOCKS); // TODO deal with the case in which only one reduce is not enough
-        
+        int s = gridSize;
+        while( s > 1 ){
+            if( s < blockSize ){
+                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, res, s);
+            } else {
+                reduce<FloatingType, gridSize, blockSize><<<gridSize, blockSize, 0, stream>>>(partialSum, partialSum, s);
+            }
+            s = (s % blockSize == 0 && s != 2) ? s/blockSize : s/blockSize + 1;
+        }
         cudaFree(partialSum);
     }
 
