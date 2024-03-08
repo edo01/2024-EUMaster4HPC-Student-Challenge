@@ -56,9 +56,6 @@ namespace LAM
             }
 
         private:
-            const char * filename_matrix;
-            const char * filename_rhs;
-
             FloatingType* _A_dev;
             FloatingType * _x;
             FloatingType * _rhs;

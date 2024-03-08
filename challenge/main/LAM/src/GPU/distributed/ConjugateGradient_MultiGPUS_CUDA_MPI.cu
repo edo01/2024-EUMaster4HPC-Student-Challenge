@@ -262,15 +262,11 @@ namespace LAM
         *  ---------------------------------------------------------------
         *  -----------------  Device memory allocation  ------------------
         *  ---------------------------------------------------------------
-        */
-        /* Allocate and initialize a given number of rows of A to each device
-           data for computating the matrix-vector multiplication */
-        
-        // stores the pointer to the result of the matrix-vector multiplication of the i-th device
+        */        
+        // stores the pointer to the result of the matrix-vector multiplication into the device
         FloatingType * Ap_dev;
 
-        /* stores the pointer to the vector for the matrix-vector multiplication of the i-th device
-           of the i-th device */
+        //stores the pointer to the vector for the matrix-vector multiplication into the device
         FloatingType * p_dev;
 
         cudaSetDevice(_device_id);
@@ -298,9 +294,6 @@ namespace LAM
             cudaMemcpyAsync(p_dev, b_dev, sizeof(FloatingType) * _num_cols, cudaMemcpyDeviceToDevice, stream); // p = b
 
             dot<FloatingType>(b_dev, b_dev, bb_dev, _num_cols, stream); // bb = b * b
-            
-            //print bb_dev
-            cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
 
             cudaMemcpyAsync(rr_dev, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, stream); // rr = bb
         }
@@ -318,6 +311,9 @@ namespace LAM
         // CG Iterations
         for(num_iters = 1; num_iters <= max_iters; num_iters++)
         {
+            // wait for the previous iteration to finish
+            cudaStreamSynchronize(stream);
+
             auto cg_start = std::chrono::high_resolution_clock::now();
 
             auto gemv_start = std::chrono::high_resolution_clock::now();
@@ -327,7 +323,8 @@ namespace LAM
             // Performs matrix-vector multiplication in each device of each rank
             gemv_host<FloatingType>(1.0, _A_dev, p_dev, 0.0, Ap_dev, _num_local_rows, _num_cols, stream);
 
-            cudaDeviceSynchronize();
+            //wait for gemv to finish  before gather
+            cudaStreamSynchronize(stream);
 
             MPI_Gatherv(Ap_dev, _num_local_rows, get_mpi_datatype(), Ap0_dev, _sendcounts, _displs, get_mpi_datatype(), 0, MPI_COMM_WORLD);
             
@@ -353,12 +350,9 @@ namespace LAM
                
                 divide<FloatingType><<<1, 1, 0, stream>>>(rr_new_dev, rr_dev, beta_dev);
                 
-                cudaMemcpy(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice);
-                cudaMemcpy(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
-                cudaMemcpy(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost);
-
-
-                cudaDeviceSynchronize();
+                cudaMemcpyAsync(rr_dev, rr_new_dev, sizeof(FloatingType), cudaMemcpyDeviceToDevice, stream);
+                cudaMemcpyAsync(rr, rr_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, stream);
+                cudaMemcpyAsync(bb, bb_dev, sizeof(FloatingType), cudaMemcpyDeviceToHost, stream);
 
                 if (std::sqrt(*rr / *bb) < rel_error) { stop = true; }
 
