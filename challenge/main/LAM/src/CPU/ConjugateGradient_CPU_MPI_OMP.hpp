@@ -327,7 +327,7 @@ bool ConjugateGradient_CPU_MPI_OMP<FloatingType>::load_matrix_from_file(const ch
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
         return false;
     }
-    printf("[MPI process %d] File opened successfully.\n", rank);
+    //printf("[MPI process %d] File opened successfully.\n", rank);
     
     // Read the matrix size
     MPI_File_read(fhandle, &num_total_rows, 1 ,MPI_UNSIGNED_LONG , MPI_STATUS_IGNORE);

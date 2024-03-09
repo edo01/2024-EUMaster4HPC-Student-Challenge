@@ -15,7 +15,6 @@ namespace LAM
     return result;
     }
 
-
     static void getHostName(char* hostname, int maxlen) {
         gethostname(hostname, maxlen);
         for (int i=0; i< maxlen; i++) {
@@ -25,7 +24,6 @@ namespace LAM
             }
         }
     }
-
 
     /**
      * ---------------------------------------------------------------

@@ -1,0 +1,18 @@
+srun: error: Unable to confirm allocation for job 769957: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769957
+srun: error: Unable to confirm allocation for job 769964: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769964
+srun: error: Unable to confirm allocation for job 769957: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769957
+srun: error: Unable to confirm allocation for job 769964: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769964
+srun: error: Unable to confirm allocation for job 769957: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769957
+srun: error: Unable to confirm allocation for job 769964: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769964
+srun: error: Unable to confirm allocation for job 769964: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769964
+srun: error: Unable to confirm allocation for job 769964: Unexpected message received
+srun: Check SLURM_JOB_ID environment variable. Expired or invalid job 769964
+srun: error: mel0294: task 1: Killed
+srun: Force Terminated StepId=770018.8
