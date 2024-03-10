@@ -325,7 +325,7 @@ namespace LAM
 
         for(num_iters = 1; num_iters <= max_iters; num_iters++)
         {
-            
+
             /*
              * ---------------------------------------------------------------
              * -----------------  Matrix vector multiplication  --------------
@@ -355,6 +355,10 @@ namespace LAM
                 gemv_host<FloatingType>(1.0, A_dev[i], p_dev[i], 0.0, Ap_dev[i], *d_size[i], size, streams[i]);
             }
 
+            #pragma omp parallel for num_threads(numDevices)
+            for(int i = 0; i < numDevices; i++)
+                cudaStreamSynchronize(streams[i]);
+
             cudaSetDevice(0);
             cudaMemcpyAsync(Ap0_dev, Ap_dev[0], *d_size[0] * sizeof(FloatingType), cudaMemcpyDeviceToDevice, streams[0]);
             #pragma omp parallel for num_threads(numDevices)
@@ -371,7 +375,9 @@ namespace LAM
                 }
             }
 
-            cudaDeviceSynchronize();
+            #pragma omp parallel for num_threads(numDevices)
+            for(int i = 0; i < numDevices; i++)
+                cudaStreamSynchronize(streams[i]);
 
             /*
              * -
