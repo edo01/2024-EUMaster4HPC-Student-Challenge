@@ -104,5 +104,6 @@ You can use the non-verbose mode to measure the performance of the solver (not w
 - The relative error
 - The total time to solve the system in seconds
 
-In the TESTS directory, you can find a large number of tests executed on Meluxina. Each implementation was tested with different matrix sizes and different numbers of MPI processes and threads. The results of each test are stored under the **TESTS/results** directory, in a file with the following format : **MERGE_CPU_STRATEGY_NAME.txt** and **MERGE_GPU_STRATEGY_NAME.txt**. The **MERGE_CPU_STRATEGY_NAME.txt** file contains the results of the CPU tests, and the **MERGE_GPU_STRATEGY_NAME.txt** file contains the results of the GPU tests. 
+In the TESTS directory, you can find a large number of tests executed on Meluxina.
+Each implementation was tested with different matrix sizes and different numbers of MPI processes and threads. The results of each test are stored under the **TESTS/results** directory, in a file with the following format : **MERGE_CPU_STRATEGY_NAME.txt** and **MERGE_GPU_STRATEGY_NAME.txt**. The **MERGE_CPU_STRATEGY_NAME.txt** file contains the results of the CPU tests, and the **MERGE_GPU_STRATEGY_NAME.txt** file contains the results of the GPU tests. 
 In the **TESTS/BEST_RESULTS** file, you can find the best results for each implementation.
